@@ -51,11 +51,7 @@ QSize renderedSize(QSize size,const Recipe &r) {
     return {std::max(1,int(std::lround(size.width()*r.crop.width()))),std::max(1,int(std::lround(size.height()*r.crop.height())))};
 }
 QPointF outputToSource(QPointF uv,QSize size,const Recipe &r) {
-    if(r.flipHorizontal)uv.setX(1-uv.x());if(r.flipVertical)uv.setY(1-uv.y());
-    const double cx=(r.crop.x()+r.crop.width()/2)*size.width(),cy=(r.crop.y()+r.crop.height()/2)*size.height();
-    const double dx=(uv.x()-.5)*r.crop.width()*size.width(),dy=(uv.y()-.5)*r.crop.height()*size.height();
-    const double angle=r.angle*3.14159265358979323846/180;
-    return geometrySource({cx+dx*std::cos(angle)+dy*std::sin(angle),cy-dx*std::sin(angle)+dy*std::cos(angle)},size,r);
+    return OutputSourceMapping(size,r).map(uv);
 }
 QImage renderLinear(const SourceFrame &source,const Recipe &r,int longEdge,QString &error,const RenderView &view,const CancellationToken &cancel) {
     error.clear();if(isCanceled(cancel)){error="Canceled";return {};}if((view.sharpenMask&&view.pointRange>=0)||view.pointRange< -1||view.pointRange>=r.pointColors.size()||!validRecipe(r)||source.linear.isNull()||source.linear.format()!=QImage::Format_RGBA32FPx4){error="Invalid frame/recipe";return {};}
