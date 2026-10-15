@@ -21,3 +21,5 @@ Execution audit (2026-10-13): do not resume DSH session `639b7ee6-4948-41bf-8d25
 
 
 User preference (2026-10-15): Do not generate or update desktop packages, ZIP archives, installers, or desktop shortcuts unless the user explicitly requests packaging. Routine development acceptance uses builds and relevant tests; packaging is not a default completion gate. Preserve existing packages.
+
+User preference (2026-10-15): Clean up disposable development artifacts regularly. After reviewing screenshots, synthetic renders and full-resolution comparison outputs, retain the concise numerical reports, source/pixel hashes and relevant logs; remove redundant image outputs and abandoned test caches. Keep private originals, authored assets, existing packages, toolchains and the active build intact. Do not accumulate screenshot variants as permanent evidence. Record cleanup when historical evidence images are removed so documentation does not imply they remain available.

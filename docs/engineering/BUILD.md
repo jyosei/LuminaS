@@ -131,6 +131,10 @@ python tools/raw-probe/verify_outputs.py build/private-qa/s1-baseline
 2026-10-15 UI补充：构建需Qt6 Widgets/Concurrent/Svg；同版本QtSvg6.8.3模块已安装。本轮新UI验收未完成，见UI-UX-V43-PROGRESS.md；桌面V39保持。
 
 
+## 开发产物保留
+
+开发产物保留：截图、合成图及完整源对照输出在核查后及时删除，保留精简日志、指标和源/像素哈希。2026-10-15 已清理约 3.66 GiB，历史图像附件不再保留；详见 [清理记录](ARTIFACT-CLEANUP-2026-10-15.md)。不要为例行验收生成桌面包，也不要删除测试原片、既有包或当前构建所需文件。
+
 ## 图片导出v1依赖（2026-10-15）
 
 新增静态LibTIFF4.7.1（ZIP/无压缩RGB和CMYK TIFF）及zlib1.3.1。固定源码来源与SHA-256见assets/licenses/export/SOURCES.json，许可在同目录。应用运行时不访问这些下载地址。
