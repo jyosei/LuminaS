@@ -98,6 +98,8 @@ private:
     void invalidatePresetStrength();
     void syncControlsFromLive();
     void presentResult(const EditResult &result,bool immediate=false);
+    void markViewEpochChange();
+    bool acceptResult(const EditResult &result) const;
     void step(int delta);
     void requestEdit();void restoreControls();void editControls(QDoubleSpinBox *changed);void endControlEdit();
     QList<Photo> photos;
@@ -113,7 +115,9 @@ private:
     EditLoader *editor=nullptr;
     EditHistory history;
     EditTag expected;
-    quint64 session=0,revision=1,draft=1,geometry=1;
+    quint64 session=0,revision=1,draft=1,geometry=1,viewEpoch=1,localIdentity=0;
+    RenderView requestedView;
+    int requestedViewRole=-1;
     bool restoring=false,comparing=false,cropSelecting=false;
     QDoubleSpinBox *exposure,*contrast,*saturation,*warmth,*tint,*angle;
     QDoubleSpinBox *highlights,*shadows,*whites,*blacks,*vibrance;

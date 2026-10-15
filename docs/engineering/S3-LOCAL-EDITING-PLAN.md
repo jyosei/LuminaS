@@ -1,5 +1,7 @@
 # 新版 S3 实施计划：图层、蒙版、笔刷与局部调整（设计与待实施）
 
+实施更新（2026-10-15）：GPU 首轮实验已独立收口，生产后端仍为 CPU。S3 A0/A1 已通过本轮基线/取消/版本门禁验收，完整回归 35/35，R7 预览与完整源像素和 A0 一致；A2/A3/B/C/D 尚未实施。实际依据为 [A 切片结果](S3-A-RESULTS.md)。下文最初“全部未开始”是制定计划时的历史状态，实施状态以上述更新与 STATUS 为准。
+
 2026-10-15。本文只做计划与任务分解。**当前所有新任务状态为“未开始 / 待实施”**，本文不声称任何功能、测试或验收已完成，也不构成性能证据。设计与决策见 [LOCAL-EDITING-DESIGN.md](LOCAL-EDITING-DESIGN.md)；旧 S3 准备文档原样保留、不被本文覆盖：[S3-IMPLEMENTATION-PLAN.md](S3-IMPLEMENTATION-PLAN.md)、[S3-ARCHITECTURE.md](S3-ARCHITECTURE.md)。新窗口接手说明见 [LOCAL-EDITING-START.md](../../handoff/LOCAL-EDITING-START.md)。
 
 ## 1. 现有事实（只读核查）

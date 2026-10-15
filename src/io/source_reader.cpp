@@ -15,9 +15,14 @@
 #include <QThread>
 #include <QThreadPool>
 #include <QtConcurrentRun>
-static QByteArray hashFile(const QString &path) {
+static QByteArray hashFile(const QString &path,const CancellationToken &cancel) {
     QFile file(path); if(!file.open(QIODevice::ReadOnly))return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256); if(!hash.addData(&file))return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while(!file.atEnd()){
+        if(isCanceled(cancel))return {};
+        const auto block=file.read(1024*1024);if(block.isEmpty()&&file.error()!=QFile::NoError)return {};
+        hash.addData(block);
+    }
     return hash.result().toHex();
 }
 static QByteArray jpegIcc(const QString &path,QString &error) {
@@ -42,11 +47,12 @@ static QByteArray jpegIcc(const QString &path,QString &error) {
     if(total!=segments.size()){error="Incomplete ICC";return {};}
     QByteArray result;for(int i=1;i<=total;++i)result+=segments[i];return result;
 }
-FrameResult readSource(const QString &path,double warmth,double tint) {
+FrameResult readSource(const QString &path,double warmth,double tint,const CancellationToken &cancel) {
+    if(isCanceled(cancel))return {{},"Canceled"};
     QElapsedTimer phase;phase.start();QJsonObject stages;
     const auto phaseDone=[&](const char *name){stages.insert(name,double(phase.elapsed()));phase.restart();};
     auto frame=std::make_shared<SourceFrame>(); frame->path=path;
-    const auto before=hashFile(path); if(before.isEmpty())return {{},QStringLiteral("无法读取源文件")};
+    const auto before=hashFile(path,cancel);if(isCanceled(cancel))return {{},"Canceled"};if(before.isEmpty())return {{},QStringLiteral("无法读取源文件")};
     phaseDone("hashBeforeMs");
     frame->sha256=QString::fromLatin1(before);
     QElapsedTimer timer;timer.start(); QString error;
@@ -56,14 +62,16 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
         if(reader.format()!="jpeg"||!acceptedImageSize(reader.size()))return {{},QStringLiteral("不是有效的 ≤45MP JPEG")};
         const auto icc=jpegIcc(path,error);if(!error.isEmpty())return {{},error};
         const auto encoded=reader.read();if(encoded.isNull())return {{},reader.errorString()};
+        if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("jpegHeaderDecodeMs");
-        frame->linear=inputToWork(encoded,icc,error); if(!error.isEmpty())return {{},error};
+        frame->linear=inputToWork(encoded,icc,error,cancel); if(!error.isEmpty())return {{},error};
         phaseDone("jpegWorkConvertMs");
         frame->colorNote=icc.isEmpty()?QStringLiteral("无嵌入ICC，按sRGB → 线性Rec.2020") : QStringLiteral("嵌入ICC → 线性Rec.2020");
         frame->facts={{"embeddedIccBytes",icc.size()},{"iccSha256",QString::fromLatin1(QCryptographicHash::hash(icc,QCryptographicHash::Sha256).toHex())},{"sourceKind","rendered JPEG"}};
     } else {
         if(!std::isfinite(warmth)||!std::isfinite(tint)||std::abs(warmth)>1||std::abs(tint)>1)return {{},QStringLiteral("无效 RAW 白平衡")};
-        LibRaw raw; if(LibRaw::versionNumber()!=LIBRAW_MAKE_VERSION(0,22,2))return {{},"LibRaw ABI/version"};
+        auto rawCancel=cancel;LibRaw raw; if(LibRaw::versionNumber()!=LIBRAW_MAKE_VERSION(0,22,2))return {{},"LibRaw ABI/version"};
+        if(cancel)raw.set_progress_handler([](void *data,enum LibRaw_progress,int,int){return isCanceled(*static_cast<const CancellationToken *>(data))?1:0;},&rawCancel);
         auto &p=raw.imgdata.params;
         raw.imgdata.rawparams.max_raw_memory_mb=1024;raw.imgdata.rawparams.use_rawspeed=0;
         p.output_color=0;p.output_bps=16;p.gamm[0]=p.gamm[1]=1;p.no_auto_bright=1;p.no_auto_scale=0;
@@ -74,8 +82,9 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
 #else
         int code=raw.open_file(QFile::encodeName(path).constData());
 #endif
-        auto failure=[&](int status){return FrameResult{{},QStringLiteral("RAW 输入失败：")+LibRaw::strerror(status)};};
+        auto failure=[&](int status){return FrameResult{{},isCanceled(cancel)?QStringLiteral("Canceled"):QStringLiteral("RAW 输入失败：")+LibRaw::strerror(status)};};
         if(code!=LIBRAW_SUCCESS)return failure(code);
+        if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawOpenMs");
         if(raw.imgdata.idata.colors!=3 || raw.imgdata.idata.filters<=1000)return {{},QStringLiteral("S2 当前仅验证三通道 Bayer RAW")};
         auto &s=raw.imgdata.sizes; if(s.width<1||s.height<1)return {{},"Invalid RAW dimensions"};
@@ -87,14 +96,17 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
         const double normalization=*std::max_element(multipliers,multipliers+4)/ *std::min_element(multipliers,multipliers+4);
         for(int c=0;c<4;++c)p.user_mul[c]=float(multipliers[c]);
         if((code=raw.unpack())!=LIBRAW_SUCCESS)return failure(code);
+        if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawUnpackMs");
         if((code=raw.dcraw_process())!=LIBRAW_SUCCESS)return failure(code);
+        if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawDevelopMs");
         float matrix[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j)matrix[i][j]=raw.imgdata.color.rgb_cam[i][j];
         int width,height,colors,bits;raw.get_mem_image_format(&width,&height,&colors,&bits);
         if(colors!=3||bits!=16||!acceptedImageSize({width,height}))return {{},"RAW RGB16 format"};
         QImage camera(width,height,QImage::Format_RGBX64);if(camera.isNull())return {{},"RAW allocation"};
         if((code=raw.copy_mem_image(camera.bits(),int(camera.bytesPerLine()),0))!=LIBRAW_SUCCESS)return failure(code);
+        if(isCanceled(cancel))return {{},"Canceled"};
         raw.recycle();
         phaseDone("rawRgb16CopyMs");
         frame->linear=QImage(width,height,QImage::Format_RGBA32FPx4);if(frame->linear.isNull())return {{},"float allocation"};
@@ -110,6 +122,7 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
         auto *destination=frame->linear.bits();const auto stride=frame->linear.bytesPerLine();std::array<double,6> minima{},maxima{};
         const auto rows=[&](int part){std::vector<float> row(size_t(width)*4);double minimum=0,maximum=0;
         for(int y=height*part/workers;y<height*(part+1)/workers;++y){
+            if(isCanceled(cancel))return;
             const auto *packed=reinterpret_cast<const quint16 *>(camera.constScanLine(y));
             for(int x=0;x<width;++x){
                 for(int c=0;c<3;++c){double v=0;for(int j=0;j<3;++j)v+=matrix[c][j]*packed[x*3+j];row[size_t(x)*4+c]=float(v/65535*normalization);}
@@ -122,6 +135,7 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
         static QThreadPool pool;pool.setMaxThreadCount(6);QFuture<void> jobs[6];for(int i=0;i<workers;++i)jobs[i]=QtConcurrent::run(&pool,[&,i]{rows(i);});for(int i=0;i<workers;++i)jobs[i].waitForFinished();
         const double minimum=*std::min_element(minima.begin(),minima.begin()+workers),maximum=*std::max_element(maxima.begin(),maxima.begin()+workers);
         for(auto t:transforms)if(t)cmsDeleteTransform(t);
+        if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawWorkConvertMs");
         frame->rawWarmth=warmth;frame->rawTint=tint;
         frame->colorNote=QStringLiteral("RAW相机通道 → 浮点矩阵 → 线性Rec.2020；高光/肤色待验证");
@@ -129,7 +143,9 @@ FrameResult readSource(const QString &path,double warmth,double tint) {
             {"contract","Bayer AHD camera RGB16 with max-WB scaling; float matrix preserves negative/superwhite; sensor/black-floor clipping not recovered"}};
     }
     if(frame->linear.isNull())return {{},QStringLiteral("源图读取失败")};
-    if(hashFile(path)!=before)return {{},QStringLiteral("源文件处理期间变化")};
+    if(isCanceled(cancel))return {{},"Canceled"};
+    const auto after=hashFile(path,cancel);if(isCanceled(cancel))return {{},"Canceled"};
+    if(after!=before)return {{},QStringLiteral("源文件处理期间变化")};
     phaseDone("hashAfterMs");frame->facts.insert("readStages",stages);
     frame->facts.insert("elapsedMs",double(timer.elapsed()));
     frame->facts.insert("width",frame->linear.width());frame->facts.insert("height",frame->linear.height());

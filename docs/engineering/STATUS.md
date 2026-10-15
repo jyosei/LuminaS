@@ -1,5 +1,11 @@
 # 工程进度
 
+2026-10-15 S3 已正式进入实施：A0/A1 完成本机验收，35/35完整回归326.35秒；取消/版本门禁专项2/2；真实R7 RAW在途协作取消3 passed；JPEG/CR3预览与全源四个像素哈希与A0一致，原生窗口exit0，12原片哈希未变。生产后端仍CPU，GPU首轮常驻4K研究结果见GPU-EXPERIMENT-ROUND1-RESULTS.md。下一步A2文档小快照/历史与A3存储，B/C/D尚未实施；RAW硬隔离仍D2。证据见S3-A-RESULTS.md。仅本地feat/s3-local-editing分支，不推送、不打包。
+
+
+2026-10-15 已核对新版 S3 文档，按用户最新顺序先执行 GPU 实验。首轮 GPU 结果已收口为继续研究：基础 float32 与隔离常驻 4K/sRGB 呈现有收益，整图 CPU↔GPU 往返未获益；并未完成 G0–G5 全部功能或兼容认证。详见 GPU-EXPERIMENT-ROUND1-RESULTS.md。生产默认 CPU 后端不变，实验构建默认关闭。现进入 S3 A0：重新采集当前生产基线，首轮测试受系统 TEMP 创建失败影响，工程临时目录下正在重新验证；A1/B/C/D 尚未实施。工作分支 feat/s3-local-editing，不打包、不改独立导出设计。
+
+
 2026-10-15 仓库准备：本地 main 已初始化，源码基线版本号设为0.1.0，作者4tissimo（GitHub隐私邮箱），Apache-2.0。公开远端jyosei/LuminaS已由用户创建并通过API核对。首次提交只纳入源码/测试/开发工具/运行资源/文字文档；排除私人样片、内嵌图原型、截图、QA原始产物、包和本机配置。版本调整后本机构建exit0；既有导出验收见EXPORT-V1-ACCEPTANCE.md。Git认证与初始推送已完成：main远端与本地初始提交b9b3e8d045d6078f0d9d26eeefba069574640d5e一致。尚未创建v0.1.0标签或GitHub Release；不创建发布包、不推进S3。
 
 
