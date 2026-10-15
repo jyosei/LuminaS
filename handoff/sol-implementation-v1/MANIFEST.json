@@ -1,0 +1,88 @@
+{
+  "package": "Lumina-Sol-Implementation-2026-10-12-v1",
+  "date": "2026-10-12",
+  "status": "Engineering specifications and plan only; no C++ implementation or desktop benchmarks",
+  "first_stage": "S0",
+  "files": [
+    {
+      "path": "00-START-HERE.md",
+      "bytes": 2997,
+      "sha256": "a93fbd43a80aae70e7282cb201c734fe5a2aa3fac699461df11832074dc8122e"
+    },
+    {
+      "path": "01-REQUIREMENTS.md",
+      "bytes": 4755,
+      "sha256": "bee90c28f2b24e7039dbe6baedaa97c0ebe53d40d54eb8526d1a1b4e62a3e5b3"
+    },
+    {
+      "path": "02-PLAN.md",
+      "bytes": 6604,
+      "sha256": "949f99671e7c11a3bb90a0ab9bcfcd000d4c892d4cb2f3647a1d22e10a519dbe"
+    },
+    {
+      "path": "03-CONTRACTS.md",
+      "bytes": 5298,
+      "sha256": "43d1b757f579777c2f646b873155da336fcceedc0906021615a0b599760d2661"
+    },
+    {
+      "path": "04-ACCEPTANCE.md",
+      "bytes": 4577,
+      "sha256": "8782819fd7cb76e8f0620f948532a4409af0e973c384cd36fe5f54df5ef19d94"
+    },
+    {
+      "path": "05-SOL-START.md",
+      "bytes": 2809,
+      "sha256": "da570c803188ddd66abc4e5a3c8cae12610009ba332b89afef044fd1082b57bb"
+    },
+    {
+      "path": "06-PROGRESS.md",
+      "bytes": 1129,
+      "sha256": "a0a7a737fa50376c109989c1b58f33733b438827c480e9ba5c1126fc69f7f304"
+    },
+    {
+      "path": "references/PROTOTYPE-NOTES.md",
+      "bytes": 1254,
+      "sha256": "b9f878efacd4e4f8ae65e656b7a3ed3d829fa44801b3115f447d8b188a64ab9e"
+    },
+    {
+      "path": "references/prototype/lumina-studio-preview.html",
+      "bytes": 310081,
+      "sha256": "5b7bb82196b012543241f4ffed127e6e2a0a8006373e9fa35bdbe94e9fe3a9c5"
+    },
+    {
+      "path": "references/prototype/qa/report.json",
+      "bytes": 3687,
+      "sha256": "b99f5371891068d6e24b080bdb8d3ac33eaa37525d2745234cc554214efffdff"
+    },
+    {
+      "path": "references/prototype/screenshots/dark-compose.png",
+      "bytes": 363172,
+      "sha256": "88c351003fa4d9aaf07172f49d83fc5938051b794bcedac463dfb289e3f37b8d"
+    },
+    {
+      "path": "references/prototype/screenshots/dark-photo.png",
+      "bytes": 364711,
+      "sha256": "410cbd794e4f39ce1b94722e04f009b00e10ae4b2cf781bd94a2b49c95cb8807"
+    },
+    {
+      "path": "references/prototype/screenshots/light-compose.png",
+      "bytes": 366260,
+      "sha256": "e8939172ec62569a9862573d968ba2739af9b389b3a205c835ced31c62078595"
+    },
+    {
+      "path": "references/prototype/screenshots/light-photo.png",
+      "bytes": 367598,
+      "sha256": "1ec02e2fec7fce035ce825a48383fe69c516b90e237e965d43a95e0d1cc184c6"
+    },
+    {
+      "path": "references/prototype/screenshots/narrow-photo.png",
+      "bytes": 229259,
+      "sha256": "16b73cb7ee979d00506273ebfdf79f6124f7deba08dc4658cfa2b10fe3449871"
+    },
+    {
+      "path": "references/REVIEW-DECISION.md",
+      "bytes": 47715,
+      "sha256": "e8d8afc155282730aef2738d9bd25cb74fc1b27a3de8a9a1ab885bd7b5ef5520"
+    }
+  ]
+}

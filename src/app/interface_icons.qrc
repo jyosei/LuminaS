@@ -1,0 +1,26 @@
+<RCC><qresource prefix="/icons">
+  <file alias="chart-spline.svg">icons/lucide/chart-spline.svg</file>
+  <file alias="check.svg">icons/lucide/check.svg</file>
+  <file alias="chevron-down.svg">icons/lucide/chevron-down.svg</file>
+  <file alias="chevron-left.svg">icons/lucide/chevron-left.svg</file>
+  <file alias="chevron-right.svg">icons/lucide/chevron-right.svg</file>
+  <file alias="circle.svg">icons/lucide/circle.svg</file>
+  <file alias="columns-2.svg">icons/lucide/columns-2.svg</file>
+  <file alias="crop.svg">icons/lucide/crop.svg</file>
+  <file alias="folder-open.svg">icons/lucide/folder-open.svg</file>
+  <file alias="hand.svg">icons/lucide/hand.svg</file>
+  <file alias="image-plus.svg">icons/lucide/image-plus.svg</file>
+  <file alias="layout-grid.svg">icons/lucide/layout-grid.svg</file>
+  <file alias="maximize.svg">icons/lucide/maximize.svg</file>
+  <file alias="palette.svg">icons/lucide/palette.svg</file>
+  <file alias="panels-top-left.svg">icons/lucide/panels-top-left.svg</file>
+  <file alias="redo-2.svg">icons/lucide/redo-2.svg</file>
+  <file alias="rotate-ccw.svg">icons/lucide/rotate-ccw.svg</file>
+  <file alias="sliders-horizontal.svg">icons/lucide/sliders-horizontal.svg</file>
+  <file alias="sun-moon.svg">icons/lucide/sun-moon.svg</file>
+  <file alias="sun.svg">icons/lucide/sun.svg</file>
+  <file alias="thermometer.svg">icons/lucide/thermometer.svg</file>
+  <file alias="undo-2.svg">icons/lucide/undo-2.svg</file>
+  <file alias="x.svg">icons/lucide/x.svg</file>
+  <file alias="brand-mark.svg">icons/brand-mark.svg</file>
+</qresource></RCC>

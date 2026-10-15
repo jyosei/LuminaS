@@ -1,0 +1,11 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {"major": 3, "minor": 24, "patch": 0},
+  "configurePresets": [{
+    "name": "dev", "displayName": "Native Qt development",
+    "generator": "Ninja", "binaryDir": "${sourceDir}/build/dev",
+    "cacheVariables": {"CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_PREFIX_PATH": "$env{QT_ROOT}", "LIBRAW_ROOT": "$env{LIBRAW_ROOT}", "LCMS_SOURCE_DIR": "$env{LCMS_SOURCE_DIR}", "BUILD_TESTING": "ON"}
+  }],
+  "buildPresets": [{"name": "dev", "configurePreset": "dev", "jobs": 2}],
+  "testPresets": [{"name": "dev", "configurePreset": "dev", "output": {"outputOnFailure": true}}]
+}

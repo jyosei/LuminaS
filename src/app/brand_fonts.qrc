@@ -1,0 +1,16 @@
+<RCC>
+  <qresource prefix="/fonts">
+    <file alias="SourceSerif4-Regular.ttf">../../assets/fonts/SourceSerif4-Regular.ttf</file>
+    <file alias="OFL-SourceSerif4.txt">../../assets/fonts/OFL-SourceSerif4.txt</file>
+  </qresource>
+  <qresource prefix="/ui">
+    <file alias="spin-up-dark.xpm">../../assets/icons/spin-indicator/spin-up-dark.xpm</file>
+    <file alias="spin-up-light.xpm">../../assets/icons/spin-indicator/spin-up-light.xpm</file>
+    <file alias="spin-down-dark.xpm">../../assets/icons/spin-indicator/spin-down-dark.xpm</file>
+    <file alias="spin-down-light.xpm">../../assets/icons/spin-indicator/spin-down-light.xpm</file>
+    <file alias="spin-up-dark-disabled.xpm">../../assets/icons/spin-indicator/spin-up-dark-disabled.xpm</file>
+    <file alias="spin-up-light-disabled.xpm">../../assets/icons/spin-indicator/spin-up-light-disabled.xpm</file>
+    <file alias="spin-down-dark-disabled.xpm">../../assets/icons/spin-indicator/spin-down-dark-disabled.xpm</file>
+    <file alias="spin-down-light-disabled.xpm">../../assets/icons/spin-indicator/spin-down-light-disabled.xpm</file>
+  </qresource>
+</RCC>

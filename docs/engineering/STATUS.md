@@ -1,0 +1,249 @@
+# 工程进度
+
+2026-10-15 仓库准备：本地 main 已初始化，源码基线版本号设为0.1.0，作者4tissimo（GitHub隐私邮箱），Apache-2.0。公开远端jyosei/LuminaS已由用户创建并通过API核对。首次提交只纳入源码/测试/开发工具/运行资源/文字文档；排除私人样片、内嵌图原型、截图、QA原始产物、包和本机配置。版本调整后本机构建exit0；既有导出验收见EXPORT-V1-ACCEPTANCE.md。推送与Git认证尚待完成，不创建发布包、不推进S3。
+
+
+2026-10-15 图片导出v1软件范围完成：JPEG/PNG/TIFF、RGB/CMYK、8/16位、ICC/尺寸/PPI/命名路径/元数据/预设、冻结持久队列和真实成片100%检查已接入。全量33/33通过363.33秒，随后相关6/6通过19.24秒；R7 JPEG/CR3全源4640×6960及合成45MP9000×5000通过，原片12张SHA零变化，main实际JPEG绘制exit0。真实45MP RAW、实物印刷及跨机发行未认证；无桌面打包/仓库发布/S3。最终依据docs/engineering/EXPORT-V1-ACCEPTANCE.md。下一步依用户顺序准备GitHub/v0.1.0，仓库准备完成后才S3，目标一个月v1.0.0。
+
+2026-10-15 用户后续里程碑：先完成并验收图片导出v1，再准备GitHub代码仓库，以现有版本发布v0.1.0；仓库准备完成后才开始S3，依据用户准备的新开发计划，目标一个月内发布v1.0.0。当前不创建仓库、不发布、不推进S3，也不主动打包。
+
+UI/UX重设计软件范围完成（2026-10-15，V48）：保留黑灰紫、统一按钮/图标与新标志，六组/跨组搜索、21分节131控件可达；加载恢复反馈、工具互斥、滚轮防误改、曲线键盘及参数Tab顺序已核验。完整30/30通过后，箭头与焦点微调再构建并通过相关8/8（21.43秒）；开发版实际启动/JPEG/CR3进程均exit0并记录真实照片绘制。验收详见UI-UX-V47-ACCEPTANCE.md。按用户约定不主动打包，未宣称独立部署通过，S3未推进。
+
+2026-10-15 最新约定：仅在用户明确要求时生成或更新桌面包/ZIP/快捷方式，日常构建与测试不附带打包。已检查没有残留打包进程；V47目录在中止前已生成，保留现状，独立部署未核验，快捷方式未更新。V47箭头方向修正后8/8相关CTest通过（22.23秒）；此前完整30/30通过（324.53秒）。详见docs/engineering/UI-UX-V47-ACCEPTANCE.md。
+
+UI/UX重设计进行中（2026-10-15）：按用户偏好恢复黑/灰/紫，已接入统一Lucide SVG、自绘框角/L标志与Windows7尺寸ICO，六组/跨组搜索/紧凑基础面板、焦点和读取恢复反馈。最新构建0、相关6/6回归和专用7 passed；实测DPR1/1.5/2及额外2.5，曝光框完整可见。高级面板/工具状态/真实R7全流程/最终回归和最终便携包仍待验，目标active；桌面快捷方式维持V39，未推进S3。最新依据UI-UX-V43-PROGRESS.md，不以中间截图或旧27/27宣称重设计完成。
+
+V39最终：S2软件范围验收完成，S3未推进。构建exit0、完整27/27 CTest通过309.48秒；首次真实首绘同R7 JPEG10.518→4.084秒、CR3 11.162→4.921秒，像素SHA一致。12张预解析113671→44086ms，缓存后首绘36–52ms、零源重建。7条全源probe0、原片零变化，3基线与V32逐位一致；复杂组合4K仍约5秒，未宣称任意组合实时。V39桌面清SDK启动/JPEG/CR3 exit0、33项ZIP一致，桌面快捷方式已更新。正式导出/项目保存属后续；系统IME人工、校准屏/HDR、真实45MP RAW、8GB机及跨机认证未通过验收。当前结论见S2-FINAL-AUDIT.md、LOAD-SPEED-V39-RESULTS.md及DESKTOP-PACKAGE-V39-RESULTS.md，以下保留历史阶段记录。
+
+用户反馈首次导入约8秒，V39专门优化读取链路：分段确认JPEG解码462ms但工作域转换5404ms，RAW解包/显影约1514ms而浮点转换4894ms；独立行LCMS/RAW转换及普通4K采样最多6线程，缓存用等价Windows SHA-256（失败Qt回退）。同源窗口首次真实绘制JPEG10518→4084ms、CR3 11162→4921ms，4K浮点/显示像素SHA一致；独立输入转换16 passed、SHA8 passed。12张预解析113671→44086ms，缓存后首绘36–52ms、源重建0、导入16次反馈，实际专项3 passed。27项新回归正在运行、完整源组合和更新包待验，不宣称S2完成。见LOAD-SPEED-V39-RESULTS；桌面包仍V36。
+
+S2 V37/V38收口进行中：新增临时锐化蒙版灰阶查看，核心/原生11 passed，R7 JPEG/CR3各3 passed，4K拖动11/11及12/13预览/绘制；显示输出隔离4 passed，三条完整源与V32像素SHA一致。24项回归23通过、横向色差再次失败，未隐去；诊断几何组合每帧约1.15秒，采样并行从固定4调整为按系统线程数最多6，本机6核试验933/930ms、原生3 passed，仍须新完整回归/哈希验证。八样本分色合成4K3 passed（5/5反馈），真实8样本及12张导入专项正在执行。见SHARPEN-MASK-V37-RESULTS、S2-FINAL-AUDIT；目标active，S3未推进，桌面试用包仍V36。
+
+桌面 V36 试用包已交付：桌面 LuminaS 试用版.lnk 指向 LuminaS-preview-20261014-v36/LuminaS.exe，同名 ZIP 12,991,870 bytes、33项哈希核对无差异；旧 V31 保留。最终构建/部署0，清除 SDK PATH 后启动/JPEG/CR3均exit0（5004/10316/11443ms），12原片SHA零变化。模块专项显示5/队列7/呈现16/胶片条7 passed；系统ICC实读3144字节。完整CTest21/22（411.05秒，offscreen），横向色差原生复查3 passed及单项CTest通过（34.45秒），不伪称同轮22/22。正式导出/会话持久化、干净跨机/多屏HDR未验收；S2尚未宣告全部完成，S3未推进。见DESKTOP-PACKAGE-V36-RESULTS.md。
+
+V36显示ICC正收口：实际构建0，独立转换5/队列7/呈现15 passed，生成图原生诊断exit0；125色块数字LCMS对照maxDeltaE2000=0，非物理色卡/校准屏认证。需继续真实R7原生、缩略图/输出隔离与完整新回归，不能引用V35的18/18充作新模块通过。详见DISPLAY-ICC-V36-RESULTS.md；S2持续到全部完成后停止。
+
+V33–V35 原生UI收口：分类导航将卡片靠近顶部，native13 passed；数值框方向图标明/暗/禁用，三组缩放各7 passed；启动响应式逻辑在首次show前应用，三组缩放各3 passed，高缩放frame完整落屏。完整CTest18/18（430.06秒）。LS原生ICO已嵌入RC，桌面包仍V31。显示ICC分支正接入，尚未用旧回归数字宣称通过；S2未全部完成，按用户新目标持续到S2完成后停止。详见NATIVE-UI-V33-V35-RESULTS.md。
+
+V32验收追加：完整CTest16/16 passed（430.45秒）；RAW/JPEG/合成45MP完整源probe均exit0、尺寸正确、源不变，峰值1140.074/1139.918/1505.953MiB；12原片SHA全不变。RAW/JPEG原生各3 passed，拖动中4/4及6/7预览/绘制；去色摄影质量、全算子/8GB设备和显示ICC仍未验收，S2未全部完成，S3仅准备。详见DEFRINGE-V32-RESULTS.md。
+
+V32 紫绿边去色已接入参数/JSON、WB之后的4K渲染、不可变before/after缓存、预设及原生卡片。实际构建0，核心10 passed、JSON7 passed、合成窗口3 passed（68398ms），约2秒10次中间预览/10次绘制且已知色边像素变化；真实R7 RAW/JPEG窗口及完整16项CTest正在验证，尚未声称通过。完整源/摄影质量和资源仍待验收，S2未全部完成，S3仅准备。桌面包保持验收V31。详见 docs/engineering/DEFRINGE-V32-RESULTS.md。
+
+桌面 V31 便携试用包已创建（2026-10-14）：桌面 LuminaS 试用版.lnk、LuminaS-preview-20261014-v31 目录及 ZIP。主程序为 Windows GUI 启动；SDK PATH 清除后启动/JPEG/CR3 烟测均 exit 0。windeployqt 自动复制失败，明确依赖复制回退通过本机验证；跨机尚未验证。正式导出/编辑会话持久化未完成；去边色仅独立数值基础（7 passed，合成4K 120ms），未接入生产。详见 docs/engineering/DESKTOP-PACKAGE-V31-RESULTS.md。S2继续，S3仅准备，目标active。
+
+V31手动横向色差已实现：红/蓝按原图像素尺度相对绿色配准，RAW还原相机RGB基底、JPEG使用线性sRGB参考；共同alpha/负值/HDR与零值旁路保持。首次拖杆仅1帧未通过，缓存只读像素元数据后同源同配方输出SHA一致；最终数值8通过，合成/RAW/JPEG窗口各3通过，三条全源probe通过，12原片SHA不变，构建/启动0，CTest13/13（356.67秒）。紫绿边去色、自动标定、摄影质量/显示ICC/资源仍待完成，S3仅准备，目标active。详见CHROMATIC-ABERRATION-V31-RESULTS.md。
+
+V30手动畸变校正已实现：源中心固定、有界单调径向回源，与裁剪/透视/暗角及4K准备缓存组合；预设保留几何，原生控件共享历史。构建/启动0，数值7通过，合成/RAW/JPEG窗口各3通过，三条完整源probe通过、12原片SHA不变，CTest11/11（327.56秒）。S2色差/去边色、摄影质量、显示ICC和资源仍待完成，S3仅准备，目标active。详见DISTORTION-V30-RESULTS.md。
+
+V29 调整卡片导航已实现：固定分类栏按卡片顺序跳转，展开目标、保留其他折叠状态，支持连续键盘选择与全部展开/收起，不改参数和历史。构建/启动0，原生专项12通过（1065ms），完整CTest9/9（288.52秒）。采用ui-design-system与interaction-design，保留深紫色调和衬线品牌。S2畸变/色差/画质/资源仍待完成，S3仅准备。详见ADJUSTMENT-NAVIGATION-V29-RESULTS.md。
+
+V28 手动镜头暗角校正：独立±2EV源平面径向亮度补偿（固定通用曲线、暂无中点/镜头标定），在原始像素取样前应用，crop/透视/旋转/翻转不重新居中；RGB共同增益保留alpha/负值/HDR，零值走原路径。4097点LUT和坐标逆尺寸预计算，未声称受控加速。准备帧/源/WB/lens缓存键完整，4K目标从不可变完整源取样，已烘焙校正清零防重叠；普通LRU不持有完整源。全局预设包含校正，几何仍保留。原生控件/精度/单项复位/比较与一次手势历史通过；最终native4 passed（40528ms），合成2秒4/5预览绘制；真实RAW/JPEG各3 passed（56402/49983ms），3/3和4/5持续反馈。HDR-SDR裁剪掩盖变化的测试已纠正，线性差异及中间亮度显示差异、混合空间/几何/缓存回归通过。三条启用.24EV完整源probe0/源不变，裁后原尺寸5568×3712/3712×5568/7200×4000及4K正确，峰值893.109/893.227/1243.941MiB（非8GB全算子认证）。构建/启动0、12原片SHA不变、CTest8/8（293.40秒）。DSH成功草稿及同会话审查后由GPT实现核心/审查/实际验证，图像QA只在本地。S2畸变/色差/画质/更大卡片导航等仍缺，S3仅准备，目标active。详见LENS-SHADING-V28-RESULTS.md。
+
+
+
+V27 手动透视：水平/垂直逆单应、中心锚定和透明边界，已接入几何准备/源坐标映射与原生卡片。crop定义为校正全画布归一坐标；采样前处理裁剪/翻转/角度，再逆投影回原始源。4K拖动复用不可变完整源，只计算4K目标，不放大裁后低分代理；非零透视保留源，普通LRU剥离完整源引用。参数/源/WB/几何缓存门禁、精算及单次历史/跨零/换图/比较/单项复位、色彩预设保留当前透视通过。最终unit11 passed（83ms），window4 passed（31467ms），合成约2秒4预览4绘制；真实RAW/JPEG各3 passed（39749/35890ms），4/5及4/4预览绘制。三条完整源probe0/源不变，按裁剪正确输出5568×3712、3712×5568、7200×4000，4K完整；峰值893.039/893.234/1243.762MiB（非8GB/全算子认证）。构建启动0、12源SHA不变、CTest7/7（244.34秒），混合纹理/锐化/颗粒缓存回归通过。DSH交付JSON/测试草稿后触60取消，GPT纠正数值/编译用例；UI与窗口测试成功后同会话审查修正，GPT实际运行；没有失败自动重试。摄影重采样/局部Jacobian质量仍待验证，空间度量采用校正画布名义原图像素。S2手动畸变/镜头暗角/色差/质量仍缺，S3仅准备，目标active。详见PERSPECTIVE-V27-RESULTS.md。
+
+V26 精确分色主窗口链路：取色/8样本列表/删除/三项偏移、三项范围与羽化已接入真实Qt卡片及共享历史，WB吸管互斥、Esc/取消/切换/比较门禁与后台忙碌恢复通过。RenderView范围预览在工作RGB阶段将未选区域转灰，独立请求身份，缓存与filmstrip只收普通图，Recipe/预设不含范围状态；范围开启时保存预设仍为正常配方。修正重叠归一：sum(w*最大偏移幅度)而非sum(w)，零调整样本不改变既有图像，跨零连续且有界。最终算子15 passed（662ms）、窗口4 passed（10304ms），合成约2秒7预览7绘制；真实RAW/JPEG各3 passed（20327/18194ms），5/5及6/6预览/绘制。三条完整源probe0/源不变，长边4K与原尺寸均正确、峰值745.172/744.785/1036.266MiB（非空间组合/8GB认证）。构建启动0、12源SHA不变，实际界面已本地查看，最终CTest5/5通过（221.41秒：窗口11.38/算子.90/S2 205.31/S1 .29/S0 3.48）。DSH控制器触60调用取消后GPT审查草稿并修正；测试草稿59调用完成后GPT纠正并实际运行，无自动重试。S2仍缺光学/透视/摄影质量等，S3仅准备，目标active。详见POINT-COLOR-V26-RESULTS.md。
+
+V25 精确分色基础（部分完成）：最多8个样本、独立色相/色度/亮度范围与羽化、固定锚点和重叠归一，共享CPU算法在完整Tone尾部执行；严格/原子JSON与预设强度保留样本范围。异步浮点取色使用4K准备帧，3×3 alpha加权、翻转、忙碌/取消/版本与源属性门禁。DSH交付JSON/独立测试和面板组件，GPT负责算法、异步接口、审查/实际构建；专项13 passed（462ms）、原生启动0、12原片SHA无变化。三条完整源probe0/源不变及4K尺寸正确。面板仅编译并独立测试，尚未挂主窗口；范围图尚未渲染、主窗口真实4K拖动/共享历史/视觉QA仍待完成，不能把该基础层算成完整Point Color。最终CTest4/4通过（201.53秒：分色.56/S2 197.25/S1 .25/S0 3.44）。S2光学/透视/摄影质量仍待补齐，S3仅准备，持续目标active。详见POINT-COLOR-V25-FOUNDATION.md。
+
+V24 颗粒：强度/原图像素尺寸/粗糙度、确定性双格点灰度乘性噪声、足迹积分及独立XY尺度，4K双Gray16缓存复用与完整源直接重放。原生专项6 passed（16939ms），尺寸/强度/粗糙度约2秒8/12/14预览；真实RAW/JPEG各3 passed，强度与粗糙度持续反馈；三个完整源probe0、4K和完整尺寸正确/源不变，峰值744.816/744.727/1036.063MiB（非空间组合/8GB认证）。构建启动0、12源SHA不变，最终CTest3/3通过（200.11秒：S2 196.47、S1 .27、S0 3.36）。DSH补测越范围搜索TEMP且损坏补丁已停并恢复；GPT完成实际验证。用户明确优先节省GPT额度，DSH每步输出8192，正常边界任务给足工具/时间预算；无自动重试/充值。S2精确分色/光学/透视/摄影质量仍缺，S3仅准备，持续目标活跃。详见GRAIN-V24-RESULTS.md。
+
+V23 预设总强度：0–100%相对应用前固定配方与预设快照作参数插值，白平衡/构图保持；0/100精确端点，往返不累积；点曲线合并结点、函数值与解析导数，显式n+2切线/外推斜率保留三次函数，JSON/自定义预设/完整源可独立重放。容量64点/有效间距/有限4096斜率受限，超限明确拒绝；共享UI曲线模型、手动编辑恢复该通道PCHIP。一次手势历史/Esc取消/换图提交/手动与库变化失效均实测；无变化角度不再重复绘制。最终native5 passed（19665ms），合成6/6预览绘制，真实RAW/JPEG约2秒5预览及5/6绘制，各3 passed（31345/26793ms）。三条完整源probe0、4K/完整尺寸和源不变，RAW/JPEG/合成45MP峰值私有提交745.133/744.750/1036.266MiB（不含空间算子，不当全算子/8GB机认证）。构建/原生启动0、CTest3/3（183.45秒：S2 179.67/S1 0.26/S0 3.50）、12原片SHA不变、最终UI截图本地核查。DSH交付字段JSON后GPT做核心/集成；UI任务触20上限取消且越读普通ui_primitives.cpp，未涉及照片/凭据，GPT接管，无自动重试；报告已校核。S2颗粒/精确分色/光学与画质等未齐，S3仅准备，目标继续活跃。详见PRESET-STRENGTH-V23-RESULTS.md。
+
+V22 黑白混合比例：0–1连续参数、旧JSON缺省1、严格校验/预设往返、控件门禁和单条手势历史。Tone共享前置处理后各自完成彩色/黑白曲线HSL分级，再在线性工作RGB混合；alpha保留、准确端点、不缓存两幅全图。DSH完成4个允许文件字段/JSON/UI，GPT实现算法并实测；模型/融合≤1码值/负值HDR与alpha通过；真实RAW/JPEG每约2秒4预览及4/5绘制，释放/Undo/Redo/禁用与开关保留比例通过。三条完整源probe0，RAW/JPEG/合成45MP完整尺寸与4K均正确、峰值私有提交744.914/744.664/1036.313MiB（无空间算子，不与V19直接横比）。最终构建/启动0、CTest3/3（171.57秒：S2 167.87/S1 0.29/S0 3.39），12原片SHA无变化，原生布局截图本地已看。详见MONOCHROME-STRENGTH-V22-RESULTS；预设总强度明确未实现，PRESET-STRENGTH-PREPARATION记录快照/曲线连续插值/历史边界，不以黑白比例替代。S2其他缺项与S3准备目标继续活跃。
+
+V21 预设管理：自定义预设重命名/删除菜单、内置保护、删除默认取消、磁盘先成功再更新列表；稳定文件身份原子改名、按唯一名称查找更新、原名复用不覆盖旧项、重复名称拒绝、普通直属文件单项删除。照片配方/渲染/历史不变；持久库重启与仅会话模式、确认取消/失效文件/外部JSON保留均实测。构建/原生启动0，专项6 passed（7344ms），最终CTest3/3（156.51秒：S2 152.88/S1 0.25/S0 3.36），12原片SHA无变化，布局截图已本地核查。本批DSH核心/UI任务触限取消，核心草稿越范围改动由GPT恢复并复核；UI任务只读且读超允许代码路径，没有照片/凭据引用，GPT完成UI与实际验证；文档任务成功后事实校正。详见PRESET-MANAGEMENT-V21-RESULTS.md。S2颗粒/预设强度/精确分色/光学等仍缺，S3仅准备，持续目标活跃。
+
+V20 自动白平衡：当前几何准备后、全局调整前的 float 工作帧有界统计估算，RAW 近似原照 WB 还原，JPEG 同帧重复无新历史/渲染；只改暖冷/色调、其他调整保留、一次Undo/Redo、精确就绪门禁。DSH承担按钮/接入与文字报告，GPT实现算法、修正漏声明/测试假接口/文档SHA误述并实际验证。构建/原生启动0，数学与UI4 passed（1521ms）；真实RAW9579/JPEG0705各3 passed（44350/17995ms），估算9/4ms，源12张SHA0变化。最终CTest3/3（152.45秒，S2 148.64/S1 0.27/S0 3.52秒）；首轮系统TEMP失败保留，项目TEMP重跑通过。统计受主导色场景影响，不认证物理Kelvin/色卡/RAW重复性；本批未新增完整源probe。详见AUTO-WB-V20-RESULTS.md，S2其他缺项继续，S3仅准备，目标保持活跃。
+
+最后更新：2026-10-14（Asia/Shanghai）。项目为 **LuminaS**，仅英文名。S2基础、4K缓存/预解析、分层UI、颜色/质感与构图扩充已实现；当前最新状态为 DEFRINGE-V32-RESULTS：紫绿边去色已接入但真实R7 RAW/JPEG窗口各3 passed、完整16项CTest通过，完整源组合probe也通过，完整源/摄影质量与资源仍待验收（构建0、核心10 passed、JSON7 passed、合成窗口3 passed），S2未全部完成、S3仅准备；更早的PICKER-STATE-V15-RESULTS记录吸管精确就绪/卡片内反馈/旧完成事件保护及134.30秒回归（历史）；TONE-V14-RESULTS记录中性计算旁路、固定输入配对15–27%路径收益与跨进程波动/撤回记录；LUMA-CURVE-V13-RESULTS记录四区域参数曲线/分界与亮度点曲线、近黑平滑过渡/实际4K反馈及130.94秒回归；WB-PICKER-V12-RESULTS记录浮点中性白平衡吸管与裁剪/翻转/RAW精算验证；PRIMARY-V11-RESULTS记录RGB原色风格/灰阶Y保护/全源与130.19秒回归，PRESETS-V10-RESULTS记录调整预设，DENOISE-V9-RESULTS记录统计优化及首次启用仍约1.9–2秒，SHARPEN-V7-RESULTS记录锐化，DEHAZE-GEOMETRY-V6-RESULTS记录去雾/双轴翻转/比例，SPATIAL-V4-RESULTS记录空间基底/资源，BRAND-DIRECTION记录字体/平面探索。S2审计与S3计划/架构已建，剩余类别继续补齐；持续开发目标活跃。下方保留阶段历史。
+
+V19：裁剪后暗角强度/中点/羽化接入最终构图与全局调色后RGB增益；不是镜头修正。首轮真实翻转组合反馈失败后，纯翻转改为精确索引与并行融合显示，透明隐藏RGB清零避免无意义溢出；数学/JSON/预设/历史/几何与LCMS≤1码值7 passed。真实RAW/JPEG三控件每约2秒12–13帧，完整源/45MP合成与原片安全通过；构建/原生启动0、CTest3/3（147.66秒）、12原片SHA不变。新DSH文字会话只修改4个允许源文件，GPT复核错误返回类型并实现核心/验证；本批未提供照片给执行者。详见VIGNETTE-V19-RESULTS。S3仅同步坐标/tile准备，其他S2缺项继续。
+
+V18：持久化预设库最多64项、原子同名更新、启动恢复/无效项提示；保存与导入的WB/几何/历史和失败边界已测。构建/原生启动0、native6 passed、CTest3/3（133.97秒）、12原片SHA不变。DSH实际写入源码后由GPT复核修正/本地验证；首次执行越界读入含样片的历史截图，旧会话禁复用，自动化图像工具已禁用并核对新工具目录。取消桥接已修正为通知并有实际cancelled结果。详见PRESET-LIBRARY-V18-RESULTS；预设强度/删除重命名等仍未实现。
+
+V17：独立锐化边缘蒙版接入实际CPU算子、4K缓存与完整源重放。uint16只存派生权重，原图/调色仍float32；六对RAW/JPEG/45MP输出对float参考差≤1码值、alpha一致，45MP这组配方峰值由2585.77降至2498.83MiB。最终构建/启动0、native6 passed、真实RAW/JPEG四控制反馈各3 passed、CTest3/3（133.33秒）、12原片SHA不变。详见SHARPEN-MASK-V17-RESULTS；灰阶蒙版查看/质量及目标机仍未验。用户追加：30/60FPS仅额外成就，非硬性通过项；持续4K反馈/精确提交仍核查。DeepSeek承担接线、测试及文档草稿，GPT复核/核心算子/实际执行。
+
+V16补充：白平衡卡片增加一键原照复位，保留其他字段，一次Undo/Redo；真实RAW/JPEG恢复4K图与基线严格相等，native5 passed、真实3 passed，最终构建/启动退出0、CTest3/3（134.34秒）、12原片SHA不变。详见WB-ORIGINAL-V16-RESULTS；自动WB/物理Kelvin仍未实现。测试代码采用DeepSeek有界草稿后由GPT修正/本地验证。
+
+下表各版本行保留当时的检查与测量，不代表所有数字来自同一次运行；当前完整回归以顶部最新结果报告为准。
+
+| 阶段 | 状态 | 证据 |
+|---|---|---|
+| S0 | 已通过（本机、合成集及一张真实 JPEG） | VS 2022 / Qt 6.8.3 x64 真正配置、构建、原生启动；下表与 evidence |
+| S1 | 已通过（R7工程基线范围） | 6组真实素材、横竖图/4K/参考与优化像素/本机速度内存/原生混合窗口已测；正式RAW质量及后期可调性留后续 |
+| S2 | 有条件通过（本机R7工程范围） | S2-RESULTS.md、COLOR-CONTRACT.md；基本编辑/4K反馈/12张导入预解析/完整源计算已实测，正式色准/目标机等未通过项单列 |
+| S2 用户扩充第一批 | 有条件通过（当前CPU参考与Qt工作区） | ADJUSTMENTS-V1-RESULTS.md；5个新参数/分组与主题/实际直方图、精度保持和12张真实回归通过；完整交集尚未补齐 |
+| S2 用户扩充第二批 | 本机工程回归通过；仍有速度/质量限制 | COLOR-V2-RESULTS.md；共享平滑曲线/八色段HSL、12张真实集、完整源计算、源安全与析构修复；4K曲线2秒10帧、HSL8–9帧 |
+| 原生UI分层改版 | 本机Qt工程检查通过，继续产品迭代 | UI-V2-RESULTS.md；stage顶栏、图标/画布工具/卡片/胶片条；真实JPEG布局DPR1/1.5/2、默认CTest3/3、原生组合7通过、RAW/JPEG实际启动退出0 |
+| S2用户扩充第三批 | 本机工程回归通过，仍有摄影质量/速度限制 | STYLE-V3-RESULTS；颜色分级/黑白混色、12张真实集、全源probe，默认CTest3/3、73.15秒 |
+| S2用户扩充第四批 | 本机工程检查通过，仍有质量/目标机限制 | SPATIAL-V4-RESULTS；纹理/清晰度、4K组合反馈、8方向与ICC片故障、缓存校验/预算、原图尺度/45MP源计算；默认CTest3/3、92.41秒 |
+| S2去雾 / 构图扩充 | 本机工程检查通过；质量范围有限 | DEHAZE-GEOMETRY-V6-RESULTS；正负去雾/共享统计、12张R7、4K拖动、源组合计算，双轴翻转/比例拖选/构图复位与历史；最新CTest3/3、104.08秒 |
+| S2传统锐化 | 本机工程回归通过；速度/质量边界保留 | SHARPEN-V7-RESULTS；强度/源像素半径/阈值、4K反馈、缓存复用/尺度/alpha，RAW/JPEG/45MP完整源组合优化前后像素一致；CTest3/3、115.28秒 |
+| S2传统降噪 | 本机核心/原生/完整源回归通过；首开与质量限制保留 | DENOISE-V8-RESULTS；亮度/色彩分开、保边统计/条带halo/原位与缓存/源尺度；CTest3/3、131.34秒；首开约2.6秒与速度/摄影质量仍未达目标 |
+| S2降噪统计优化 / 拖动历史保护 | 当前干净原生与完整默认回归通过 | DENOISE-V9-RESULTS；一次读取/所有权移交/共享alpha权重；强制editingFinished不分裂拖动历史，初始失败保留；首次准备约1.9–2秒，CTest3/3、130.61秒，响应目标仍未通过 |
+| S2调整预设 | 本机格式/历史/源安全/真实素材/布局通过 | PRESETS-V10-RESULTS；4内置/自定义原子JSON保存读取应用、保留WB/构图、一条历史；RAW/JPEG四预设与150/200%DPR布局、CTest3/3、130.02秒；持久库/强度与颗粒未实现 |
+| S2RGB原色风格 | 本机数学/原生/预设历史/全源回归通过 | PRIMARY-V11-RESULTS；六参数/灰阶Y保护/工作域矩阵、RAW/JPEG六控件4K反馈、全源/45MP合成/源SHA，CTest3/3、130.19秒；非相机配置/色卡标定 |
+| S2中性白平衡吸管 | 本机数学/原生/真实构图/历史回归通过，时序观察保留 | WB-PICKER-V12-RESULTS；调整前浮点3×3/JPEG增益与RAW逆矩阵、源精算、偶数镜像/缩放/模式，native5 passed，最终CTest3/3、129.38秒；早期未就绪拒绝失败保留，自动/物理Kelvin与色卡未认证 |
+| S2参数/亮度曲线 | 本机数学/JSON/预设/历史/4K及完整源回归通过 | LUMA-CURVE-V13-RESULTS；四区域/三分界、独立亮度通道/平滑近黑，RAW/JPEG八段2秒8–11帧、完整源/45MP合成，最终CTest3/3、130.94秒；摄影质量与实时速度目标仍待验 |
+| S2中性颜色计算旁路 | 数学/alpha/原生/完整源通过；稳定速度认证仍待验 | TONE-V14-RESULTS；同进程固定float帧12对15–27%路径收益、像素差≤1码值，四区域实际2秒12–14帧；跨进程计时不稳定、重排候选撤回。完整CTest3/3、136.13秒，12原片SHA不变 |
+| 吸管就绪/状态反馈 | 原生/真实素材/错误状态/旧帧/完整回归通过 | PICKER-STATE-V15-RESULTS；按钮/API统一完整tag/float能力，卡片内状态/错误，Esc无渲染，深浅对比度5.05/5.21，原生截图已查看；CTest3/3、134.30秒 |
+| S2原照白平衡复位 | 原生/真实RAW/JPEG精确恢复/历史回归通过 | WB-ORIGINAL-V16-RESULTS；保留其他调整、门禁/零值不渲染、4K与源SHA，CTest3/3、134.34秒；不含自动白平衡 |
+| S2独立锐化边缘蒙版 | 原生/真实4K/完整源/资源修正回归通过 | SHARPEN-MASK-V17-RESULTS；按需uint16系数、阈值独立、JSON/预设/历史、float对照差≤1码值，CTest3/3、133.33秒；45MP合成同配方2498.83MiB，非全算子/真实45MP RAW目标机认证 |
+| S2裁剪后暗角 / 纯翻转融合 | 原生/真实4K/完整源通过；质量认证保留 | VIGNETTE-V19-RESULTS；三参数/构图坐标/预设历史、正负HDR/alpha、纯翻转索引，真实三段12–13帧/约2秒；CTest3/3、147.66秒；不计为镜头配置校正 |
+| LuminaS品牌与字体 | 已落地，当前品牌方向可继续迭代 | BRAND-DIRECTION；LuminaS.exe构建/启动退出0，Source Serif 4资源/名称/图标/2×DPI原生检查4通过；平面稿为内置imagegen探索 |
+| S2完整核查 / S3准备 | 审计与启动前文档已完成初稿，后续补齐继续 | S2-COMPLETION-AUDIT、S3-IMPLEMENTATION-PLAN、S3-ARCHITECTURE；完整参数交集仍有缺项，不以文档当S3功能实现 |
+| S3–S7 | 未开始 | 未实现完整任务/局部/保存/同步/导出/发行 |
+
+## 产物与修改
+
+新增 `.gitignore`、CMakeLists.txt、CMakePresets.json；`src/app/main.cpp`、window.h/.cpp、canvas.h/.cpp；`src/io/jpeg_loader.h/.cpp`；`tests/s0_tests.cpp`；`tools/dev.ps1`、check-native.ps1；工程 ENVIRONMENT.md、BUILD.md、STATUS.md 与 evidence。只更新交接包 06-PROGRESS.md，不改其规格/历史设计稿。
+
+真实 JPEG 异步读取、EXIF 自动归一、适屏/平移/指针中心缩放、胶片条缩略图与切图、当前照片和多选分离、三态选片与筛选均实现。源文件只读；45MP 解码前检查；最新预览请求替换等待项，旧结果不能提交；加载清空上一张画布避免错认。关闭后不回调已销毁窗口。UI 明示低清预览和内存标记，没有假导出按钮。
+
+## 实际命令与结果
+
+共同前置：`$env:QT_ROOT = (Resolve-Path '.tools/Qt/6.8.3/msvc2022_64').Path`；工具安装见 ENVIRONMENT.md。
+
+| 实际运行 | 结果 | 证据 |
+|---|---|---|
+| `./tools/dev.ps1 configure` → `cmake --fresh --preset dev` | 退出 0；MSVC 19.44.35227.0；Qt 配置成功 | evidence/configure.log |
+| `./tools/dev.ps1 build` → `cmake --build --preset dev` | 退出 0；完整 14 步构建成功；后续测试/main 修改增量构建成功 | 工具运行记录、evidence/build.log、build-final.log |
+| `./tools/dev.ps1 test` → `ctest --preset dev` | 最终退出 0；1/1 test passed，1.78 秒；offscreen | evidence/ctest.log |
+| `./tools/check-native.ps1` → `s0_tests.exe`，QPA=windows | 退出 0；4 个功能 case + init/cleanup，共 6 passed，0 failed；3256ms | evidence/native-tests.txt |
+| 同脚本 → `lumina.exe --smoke-test build/dev/fixtures/方向六.jpg` | 退出 0；真实程序启动、成功提交 JPEG 后正常退出 | evidence/native-startup.log；smoke 失败/超时会返回非零 |
+
+记录的秒数是测试运行时间，不是打开图片 p95 或屏幕呈现时延。截图是 Windows QPA 下真实窗口的 QWidget grab（不含系统标题栏），展示合成绿图、真实缩略图、原图/代理尺寸、选片状态；已视觉检查，没有截图裁切/文字重叠，不当作性能/肤色证据。
+
+## S0 检查
+
+| 条目 | 状态 | 实际覆盖 |
+|---|---|---|
+| A01 工具链/构建/启动 | 已通过 | x64 MSVC 2022、Qt 动态 ABI、CMake/Ninja；原生 windows QPA |
+| A02 JPEG/方向/错误/快切/源安全 | 已通过（合成集） | 中文路径 1600×900；编码 1200×800 + EXIF 6 → 800×1200；坏内容、缺失文件拒绝；30 次快速请求后仅最终图提交；操作前后 SHA-256 相同 |
+| A03 选片 | 已通过（本次会话） | 当前图与两张多选独立；三态设置及筛选；排除文件仍存在；切图保持标记 |
+| A04 JPEG 边界部分 | 已通过 | 9000×5000=45,000,000 解码并给出 ≤2MP 代理；9001×5000=45,005,000 拒绝且无图像结果 |
+| 平移/缩放/适屏 | 已通过 | 输入事件使 zoom 增长、平移后画布像素改变、适屏回到原比例 |
+| 关闭时任务安全 | 已通过（测试集） | 请求尚在途时关闭/销毁窗口，随后排空事件，无崩溃 |
+| 无固定忙刷新 | 已通过（源码检查） | 日常 UI 没有刷新 timer；只有测试 smoke 超时/退出 timer |
+
+样本尺寸、用途与 SHA-256 见 evidence/fixture-manifest.json；JPEG 由测试代码产生，包括完整 45MP 合成源，未上传私人照片。
+
+## 失败修复与未验证事项
+
+首次开发环境脚本 vcvars 引号错误导致配置失败，已修复；自动发现另一个编译器后主动固定 VS 2022，并重新配置构建。最终执行检查没有失败项。缺 Vulkan headers 为可选探测信息，不阻止 S0。
+
+以下仍未通过相应后续验收：更多真实相机 JPEG/全部 EXIF 镜像方向/更多损坏编码与嵌入 ICC 的广泛回归；人工操作原生文件对话框和不同 DPI/输入设备；真实 CR3 解码与颜色质量；8GB 核显目标机的全进程内存、p95、45MP RAW 与10张流程；显示器 ICC/宽色域/HDR；重启标记保存、恢复和完整导出；干净机器部署、正式许可及发行。当前 5.87GiB 开发机不当作目标机性能认证，合成 JPEG 不当作 RAW/摄影质量认证。
+
+S0 完成后停止。S1 依赖已验证 C++/Qt 构建组合；下一轮另行执行 LibRaw probe、选择并记录依赖版本/配置，以及有使用权的真实 CR3（包括接近45MP）与参考显影样本。没有样本时只能做工具实验，不能认证 RAW 质量。本轮没有安装 LibRaw 或实现 S1。
+
+## 2026-10-12 追加：用户本地真实样片
+
+用户提供 `pictures4test/4X1A9817.JPG`（9,270,278 bytes）和同名 CR3（21,525,850 bytes），授权本地测试。没有上传、重写、删除原片；照片和包含照片的截图均留在被忽略的目录。新增 `/pictures4test/` 忽略规则，截图/详细样本哈希在 `build/private-qa`（整个 build 已忽略）。
+
+JPG 实际编码尺寸 6960×4640 = 32,294,400 像素；Qt 方向变换值 7，归一后 4640×6960，约2MP代理 1154×1732，确认竖向显示。没有可用 ICC，界面明示按 sRGB 预览，不作为绝对色彩准确性认证。CR3 实际送入当前 JPEG loader 被明确拒绝，错误为“不是可识别的 JPEG 文件”；未读取其嵌入预览冒充 RAW，未解码 RAW 或推断 RAW 有效尺寸。
+
+实际命令（先设置 BUILD.md 所述 QT_ROOT）：
+
+| 命令 | 结果 | 本地证据 |
+|---|---|---|
+| `./tools/dev.ps1 build` | 退出0，新增真实样片测试构建成功 | evidence/build-real-samples.log |
+| `./tools/check-real-samples.ps1` | 退出0；原生 QtTest 1个功能case+init/cleanup 共3通过0失败；3652ms为测试总时间 | build/private-qa/real-tests.txt、real-samples.json |
+| 脚本内 `lumina.exe --smoke-test pictures4test/4X1A9817.JPG` | 退出0，当前 JPEG 预览提交成功 | build/private-qa/native-results.json |
+| 脚本内 `lumina.exe --smoke-test pictures4test/4X1A9817.CR3` | 退出1，符合 S0 不支持 RAW 的预期；不是 RAW 验收通过 | 同上 |
+| `./tools/dev.ps1 test` | 退出0，CTest 1/1通过，1.53秒；未设置真实样本变量时可选case跳过 | evidence/ctest-real-samples-regression.log |
+
+真实样片检查：JPG预览成功、CR3切入显示错误且清空画布、返回JPG成功、保留标记在切图后存在、30次交错快切仅最终JPG结果提交、排除筛选及恢复未标记、两份源文件操作前后SHA-256不变。已查看 Windows QPA 下真实JPEG窗口截图，人物竖向显示，预览/缩略图和尺寸标签均可见。截图在 `build/private-qa/real-jpeg-window.png`，未纳入共享证据目录。
+
+本次只新增 tests/s0_tests.cpp 的可选本地回归、tools/check-real-samples.ps1、忽略规则和工程/交接记录，没有修改生产加载功能，没有进入 S1。现在已有一份用户提供的真实 CR3，S1可据此开展解码实验；仍缺更多样本、接近45MP输入及参考显影/质量依据。
+
+## 2026-10-12追加：S1与4K要求
+
+用户授权S1，确认预览长边至少3840像素、小图原尺寸；替换S0约2MP试测策略。同时确认RAW基础外观偏暗/偏灰可接受，不以复刻机内JPEG为目标，后续重点验证正常曝光/WB/色调调整。需求已写入交接01/U11-U12、03代理合同、04/A18。
+
+实现：src/raw/raw_decoder.h/.cpp真实CR3 open/unpack/AHD或DCB处理，厂商裁边、45MP有效尺寸预检、完整RGB16线性实验基线、4K SDR预览；tools/raw-probe/main.cpp记录元数据/参数/分段耗时/进程高水位/输出边界，输出PPM16、PNG及与相机JPEG的描述性对照；Qt窗口可选JPEG/CR3，复用唯一后台任务和过期结果保护。RAW缩略图选中显影后生成，无嵌入预览冒充显影。
+
+修改/新增：CMakeLists.txt、CMakePresets.json、cmake/LibRaw.cmake；src/io/preview_size.h、jpeg_loader.h/.cpp；src/raw/raw_decoder.h/.cpp；src/app/window.cpp、canvas.h、main.cpp；tests/s0_tests.cpp、s1_tests.cpp、fixtures/manifest.json；tools/dev.ps1、install-libraw.ps1、check-real-samples.ps1、check-s1.ps1、raw-probe/main.cpp与verify_outputs.py；工程BUILD/ENVIRONMENT/RAW-BASELINE/STATUS、evidence/s1-*；交接01/03/04/06。无空平台模块、正式LICENSE、S2调参或S4导出UI。
+
+| 实际命令/检查 | 结果 | 证据 |
+|---|---|---|
+| 设置QT_ROOT/LIBRAW_ROOT后dev.ps1 configure/build | 退出0；固定MSVC2022+Qt6.8.3+LibRaw0.22.2，完整26步构建 | evidence/s1-configure.log、s1-build.log及增量日志 |
+| raw_probe分别AHD/DCB真实CR3 | 两次退出0；归一4640×6960、预览2560×3840；RGB16文件各193,766,419 bytes | RAW-BASELINE.md精确命令，evidence/s1-metrics.json；详细报告/图像在build/private-qa/s1-baseline |
+| check-s1.ps1 -OutputDirectory build/private-qa/s1-baseline -SkipProbes | 退出0；原生JPEG case 3通过0失败、S1测试5通过0失败 | evidence/s1-jpeg-tests.txt、s1-native-tests.txt |
+| 同脚本实际lumina.exe --smoke-test打开JPG/CR3 | 两次退出0；两份源片哈希不变 | build/private-qa/s1-baseline/native-results.json |
+| python tools/raw-probe/verify_outputs.py build/private-qa/s1-baseline | 退出0；PPM大端/尺寸/payload/buffer哈希核对通过 | evidence/s1-ppm-verification.json |
+| raw_probe输出指定原CR3 | 预期拒绝返回2，原片不变 | 本轮工具运行记录，CLI预检 |
+| dev.ps1 test | 退出0，CTest2/2通过，1.79秒；默认真实case跳过，原生脚本已单独执行真实case | evidence/s1-ctest.log |
+
+已验证真实JPEG和RAW均2560×3840；横/竖合成尺寸策略、小图不放大、45MP及安全整数判断、中文RAW路径、坏RAW/缺失文件、RAW在途切回JPEG旧结果不提交、标记不丢、真实原生启动和源哈希不变。窗口与AHD/JPEG对照截图已视觉检查，仅留build/private-qa，不上传/不纳入共享照片证据。
+
+AHD/DCB管线分别8031/11067ms、峰值私有提交748.55/1056.26MiB，详见RAW-BASELINE.md的统计边界；不冒称8GB目标机/p95或屏幕时延。默认采用AHD作为实验基线，未宣称其画质最终优于DCB。原先机内JPEG外观差异按用户要求仅描述，不视作验收失败；RAW可调性/高光空间仍待S2从源验证，有界RGB16不是唯一母版。
+
+完整S1门槛未通过事项：近45MP真实CR3、更多机型/压缩/光照/肤色/高光数据、固定质量参考、正式后期可调性和目标机资源。阶段因此有条件通过，S2–S7仍未开始。本轮没有执行正式编辑/保存/导出或RAW隔离worker。
+
+## 2026-10-12追加：读取/显影速度检查
+
+用户要求检查提速空间。发现窗口RAW路径执行了实验用全RGB16统计/hash；已加collectLinearDiagnostics开关，窗口跳过，raw_probe默认保留且输出线性文件时强制保留，源前后hash检查不变。JPEG/RAW增加分段计时，新增tools/speed-probe/main.cpp、summarize.py与CMake目标；修改src/raw、src/io、CMakeLists，新增SPEED-CHECK.md、evidence/speed-*，未进入S2/S3。
+
+同一32MP样片，JPEG5次中位232ms；RAW旧统计路径3次中位6291ms、优化预览3次中位4976ms，耗时减少20.90%，前后6次4K像素hash完全一致，源hash不变。不是以旧PPM写出实验8秒当GUI基准；计时为解码到4K缓冲，不含绘制，OS缓存未控制，非p95/目标机认证。主要剩余热点为AHD显影约3648ms；OpenMP独立构建与有界缓存值得后续验证，未宣称已通过。
+
+首次速度工具构建缺QJsonArray include已修复；最终构建退出0，CTest2/2通过，真实Windows RAW路径/过期任务回归通过。详细运行命令、阶段中位与进一步方向见SPEED-CHECK.md。S1仍有条件通过，完整RAW质量/45MP及后期可调性门槛不因速度改动自动通过。
+
+## 2026-10-12追加：优化方案独立验证
+
+按用户要求继续验证，不进入S2编辑/完整S3系统。新增tools/build-libraw-openmp.ps1、run-optimized.ps1、cache-probe/main.cpp、speed-probe/compare_optimizations.py、src/raw/packed_rgb16.h；修改RawOptions/显影输出、loader候选开关、speed_probe模式、CMake实验目标/默认OFF选项、s1_tests行重叠回归；新增OPTIMIZATION-EXPERIMENTS.md、优化数值/构建/原生证据；更新工程/交接记录。
+
+独立SDK按固定官方源码归档/官方Makefile加/openmp重建，/A防止复用旧object，官方SDK未改；独立build/openmp候选直接缓冲ON。各模式3次：官方原缓冲4974ms/748.94MiB；直接缓冲4971ms/563.88MiB；OpenMP直接缓冲1/2/4/6线程4977/3310/2572/2358ms。共18次4K像素与上轮相同，源hash不变。推荐4线程作为本机候选（6线程只再省214ms），不声称目标机/功耗认证。
+
+独立缓存实验96MiB预算两张4K图计费75MiB；每hit全源hash：RAW5次中位138ms，JPEG60ms；同大小同mtime内容变更失效、预算淘汰、像素一致均通过。仅实验工具，Window未接入缓存，未完成S3。
+
+源码库构建、默认与候选应用构建、候选真实Windows回归6通过0失败、实际候选RAW启动退出0；默认CTest通过。详细精确命令/统计范围/下一轮门槛见OPTIMIZATION-EXPERIMENTS.md。仍缺近45MP/更多真实样本及8GB/稳定功耗和正式RAW可调性证据，S1状态不变。
+
+## 2026-10-12追加：6组R7素材与S2准备
+
+用户新增5对，现共6对/12文件；确认均R7、不强求当前必须获得45MP样本，最终维持45MP设计上限、不扩6680万。最新阶段门槛按此更新：S1 R7工程基线已通过，未测的45MP/目标机和正式RAW质量保留为覆盖项，不阻塞S2；以上“有条件通过/缺45MP”段落是历史证据，不应重新变成当前阻塞条件。
+
+每张RAW参考/4线程候选各3次，共36次像素一致；6张JPEG各3次，完整归一尺寸额外验证一致。参考RAW中位4629–5063ms，候选2244–2676ms（减少46.3–51.5%）；JPEG203–252ms；参考峰值私有提交748.93–749.02MiB，候选563.35–563.54MiB。含一张横图/五张竖图，预览对应3840×2560/2560×3840。源hash不变，非p95/冷启动或目标机认证。
+
+候选窗口逐张显示12素材、保留/筛选、30次快切最终结果/旧结果保护通过；原生case含init/cleanup共3 passed；截图视觉检查留私有目录。构建/默认CTest2/2通过。修改仅实验工具/测试与文档：speed_probe新增JPEG原生尺寸字段；check_sample_set.py、verify_sample_geometry.py；s1_tests扩展集合窗口case；更新tests/fixtures/manifest.json、R7-SAMPLE-SET.md、S2-IMPLEMENTATION.md及交接/工程记录。精确命令/数字见R7-SAMPLE-SET/evidence/r7-*。
+
+用户表示此步完成后可考虑S2，已准备具体顺序：输入/float32+ICC合同→基本曝光/RAW WB和RGB暖冷→裁剪/坐标→独立recipe/历史/异步→4K与完整源回归。本轮未创建S2空模块/调参UI或声称可正常后期已经通过。
+
+## 2026-10-12追加：S2实现与4K预解析缓存
+
+用户随后授权“开始”，并追加拖动实时反馈、4K缓存调参/完整源重放、导入即后台预解析。本轮完成输入/ICC/float工作域、曝光/对比度/饱和度/WB、裁剪校直、每图recipe与跨图Undo/Redo、原图比较、版本保护和会话缓存。生产路径是C++/Qt/LibRaw/LCMS，历史浏览器原型未参与。
+
+修改：CMakeLists.txt、src/core/{document,commands}、src/color/color_pipeline、src/io/{source_reader,preview_cache,preview_size}、src/render/cpu_renderer、src/app/{edit_loader,window,canvas,main}、tests/{s0_tests,s1_tests,s2_tests}、tools/{dev,install-lcms,run-s2,render-probe}及工程文档/证据。完整合同与边界见COLOR-CONTRACT.md，详细结果见S2-RESULTS.md。
+
+实际设置QT_ROOT=Qt6.8.3、LIBRAW_ROOT=独立OpenMP0.22.2 SDK、LCMS_SOURCE_DIR=官方2.19.1标签核心源码；tools/dev.ps1 configure、build均退出0，最终test退出0、CTest3/3通过24.34秒。直接运行Windows QPA s2_tests.exe realR7Edits、continuous4kDragFeedback、liveWhileRawPrecisionIsRunning、realImportPreparesAllBeforeClicks均通过；实际lumina.exe --smoke-test分别打开4X1A9579.CR3/JPG，退出0，总运行11934/9891ms（含启动、解析、显示与关闭，不当打开时延）。源12张最终SHA全部不变。
+
+导入12张无需逐张点击即全部预解析，114229ms；随后12张点击都未重解析原片，多数同步显示24–38ms，首张350ms；编辑数据核验439–1486ms。预解析过程中拖动仍16帧；普通RAW基本调参每约2秒27–29帧；RAW精算中另一次拖动22帧/约2秒。缓存测量进程峰值工作集1216.19MiB、私有提交1411.90MiB。固定512MiB显示/4GiB会话工作缓存预算，超过预算可淘汰；正常关闭清理，不宣称无限张即时切换或30/60FPS。
+
+真实横RAW/JPEG同recipe从完整源生成5568×3712裁框输出与3840×2560预览；RAW峰值私有提交892.91MiB。45MP合成JPEG当前float源及9000×5000完整输出通过，峰值私有提交1036.29MiB；45,005,000像素JPEG拒绝退出1。实际照片及窗口截图留本地build/private-qa；最新原生缓存窗口截图已检查，胶片条12/12就绪，画面/文字正常。证据在evidence/s2-*。
+
+已修复LCMS运行时版本断言、旧测试对缓存同步展示的信号假设和QtTest保留每帧导致的内存测量膨胀。最终构建/默认/已启用真实case无失败。未通过项：正式色准/显示ICC/HDR、更多机型及真实45MP RAW、细纹抗混叠与输出锐化、目标8GB实机/p95、保存/恢复、RAW硬取消/隔离、强杀缓存残留处理、正式导出/发行及源码LICENSE。S2本机R7工程范围有条件通过，S3–S7未展开。
+
+## 2026-10-12追加：调参能力调研、UI核对与画布浏览
+
+用户指定Lightroom/Photoshop/像素蛋糕交集作为扩展参照，并要求非编辑工具状态小手拖动+滚轮缩放、检查原设计UI。官方桌面帮助已调研，ADJUSTMENT-COVERAGE.md记录共同类别/当前差距/实施顺序，区分PS独立工具与Lightroom等效任务。基本面板13项当前覆盖5项、缺8项；新参数尚未实现，不用调研文档计为功能通过。
+
+原docs/06-ui-design.md有完整视觉稿；交接PROTOTYPE-NOTES及01需求已修订其信息架构。UI-DESIGN-AUDIT.md记录灰色层次/工作区/分组/胶片条/工具状态等当前差距与下一版依据；未全面改版或把原型当生产引擎。
+
+实际修改src/app/canvas.h/.cpp：默认张开手/左键握手拖动/释放恢复，指针中心滚轮与pixelDelta缩放，裁剪十字/退出回浏览，右键释放不结束左键拖动，重复更新不清掉同状态手势，双击适屏限定浏览。扩展现有s0_tests交互断言；更新BUILD及交接需求。构建退出0，最新CTest3/3通过23.06秒；Windows QPA交互case+init/cleanup为3 passed、0 failed、2318ms。证据evidence/navigation-build.log、navigation-ctest.log、navigation-native.txt。真实硬件触控板/不同DPI人工体验尚未验证，未改图像计算或进入完整S3–S7。
+
+## 2026-10-13追加：第一批参数与Qt工作区
+
+用户“开干”授权后，新增高光/阴影/白色/黑色/鲜艳度，基本全局从5到10项；每图recipe/撤销/原片只读、4K缓存反馈和完整源重放保持。采用自有亮度权重/自适应饱和度模型，不宣称复刻Adobe/PixCake或恢复传感器已丢失高光，公式见COLOR-CONTRACT.md。
+
+Qt已接入深浅主题、选片/编辑、可折叠白平衡/光线/色彩/构图、单项复位、可滚动侧栏、短信息/详细tooltip、短撤销按钮和真实预览直方图/端点提示；普通小手拖动/滚轮缩放保留。未展示无效的局部/修饰/AI/导出占位按钮。1366×768逻辑窗口深/浅/选片原生截图已检查，未宣称150/200%跨屏人工验收完成。
+
+修改：CMakeLists.txt、core/document、render/cpu_renderer与tone_operator.h、color/color_pipeline、app/window/canvas及新preview_histogram、tests/s2_tests；工程合同/BUILD/研究与UI核对/ADJUSTMENTS-V1-RESULTS/evidence，及交接01/06。tools/dev.ps1 build退出0；最新test为CTest3/3通过37.43秒。Windows QPA数值/融合/交互5 passed，精度保持/UI补充4 passed；修复后12张真实集合3 passed、0 failed、237645ms；实际lumina.exe无输入原生smoke退出0。命令及证据见BUILD和ADJUSTMENTS-V1-RESULTS。
+
+真实RAW十参数拖动：新五项各约2秒13帧，旧五项27–30帧，校直40次Qt绘制；RAW精算重叠拖动21帧/约2秒，非30/60FPS或屏幕p95。真实RAW/JPEG含新参数的完整源5568×3712和4K预览计算均退出0，峰值私有提交约893MiB（工程probe，不当整个窗口峰值）；12源最终SHA不变。
+
+失败已修复：真实集合第七张recipe保持失败，发现修改一项时旧逻辑重读所有数值框导致其他参数舍入，改为只更新变化项并回归精度/撤销；新集合重跑通过。初次暗色控件继承不完整已修复并再次检查。原失败日志保留，最终当前检查无失败。
+
+剩余：纹理/清晰度/去雾、曲线/HSL/分级等完整交集、局部/修饰、永久保存/同步/正式导出未实现；正式色准/质量参考、真实45MP RAW、目标机资源、全DPI/输入设备、发行许可仍待验。本轮是第一批可运行实现，未展开完整S3–S7。
+
+

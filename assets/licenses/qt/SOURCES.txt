@@ -1,0 +1,11 @@
+Qt 6.8.3 license texts copied verbatim from the official qtbase v6.8.3 source:
+https://github.com/qt/qtbase/tree/v6.8.3/LICENSES
+
+Qt shared runtime source: https://download.qt.io/archive/qt/6.8/6.8.3/single/
+LibRaw 0.22.2 source: https://github.com/LibRaw/LibRaw/tree/0.22.2
+Little CMS 2.19.1 source: https://github.com/mm2/Little-CMS/tree/lcms2.19.1
+Source Serif 4: https://github.com/adobe-fonts/source-serif
+
+LuminaS uses shared Qt and LibRaw DLLs. Replacement compatible DLLs can be
+placed alongside the executable. This local preview package does not include
+the project developer tools, API workers, credentials or private photos.

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "tiff",
+    "url": "https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz",
+    "sha256": "f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69",
+    "bytes": 4000609
+  },
+  {
+    "name": "zlib",
+    "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+    "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+    "bytes": 1512791
+  }
+]

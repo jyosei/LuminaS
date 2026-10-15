@@ -1,0 +1,40 @@
+# Separate automation profile; does not modify the user's Desktop profile.
+- id: acp
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+- id: llm-deepseek
+  config:
+    thinking: disabled
+    maxTokens: 8192
+    retryPolicy:
+      mode: normal
+      maxRetries: 0
+- id: pwsh-sandbox
+  config:
+    pwshPath: 'C:\Users\CascadeAI\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe'
+    timeoutMs: 120000
+    maxTimeoutMs: 300000
+- id: session-telemetry-otel
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: command-goal
+  disabled: true
+# This suite also exposes read_image; keep it disabled in the automation
+# profile until a narrower per-tool restriction is installed and verified.
+# PowerShell/search tools remain available for bounded text work.
+- id: tool-fs
+  disabled: true

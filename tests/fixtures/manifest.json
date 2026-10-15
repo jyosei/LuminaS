@@ -1,0 +1,271 @@
+{
+  "scope": "local R7 expanded S1 regression manifest; pictures ignored",
+  "permission": "User authorized local tests; no upload/redistribution inferred",
+  "samples": [
+    {
+      "path": "pictures4test/4X1A0705.CR3",
+      "bytes": 15905114,
+      "sha256": "699dbba659017bd8451083385d687afe1fece9db93afc5087aa4e14a9b9f0342",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 5
+    },
+    {
+      "path": "pictures4test/4X1A0705.JPG",
+      "bytes": 8225337,
+      "sha256": "341c41447e541ce8c11ffd056653174180cbdce65f54755f3b37baa457482a51",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    },
+    {
+      "path": "pictures4test/4X1A9413.CR3",
+      "bytes": 13701978,
+      "sha256": "e37aa27f30f6db3e4ee85b9296622891a11eb3f200a3a940c8700864ea213357",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 5
+    },
+    {
+      "path": "pictures4test/4X1A9413.JPG",
+      "bytes": 7107456,
+      "sha256": "55f8e95728a5f057eee882540afcb9027864e689ef759c1a1320a0198ae88201",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    },
+    {
+      "path": "pictures4test/4X1A9579.CR3",
+      "bytes": 17655130,
+      "sha256": "1cc9a37d72cc02c137b0db12e17e7ea3d4176ed30058f9342a9fed2a663d2856",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        6960,
+        4640
+      ],
+      "expectedPreview": [
+        3840,
+        2560
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 0
+    },
+    {
+      "path": "pictures4test/4X1A9579.JPG",
+      "bytes": 8456567,
+      "sha256": "40dd3b69da039d7b6f492dd731cf49429d57eed4e633554014a973b6623c2893",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        6960,
+        4640
+      ],
+      "expectedPreview": [
+        3840,
+        2560
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    },
+    {
+      "path": "pictures4test/4X1A9817.CR3",
+      "bytes": 21525850,
+      "sha256": "e8268916d0f88cab514fa57dfa2701dcbad428804221b251da9166278cfbff2f",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 5
+    },
+    {
+      "path": "pictures4test/4X1A9817.JPG",
+      "bytes": 9270278,
+      "sha256": "1c2d434318c0b0b18991187c622816567fe399a0fdd2bfed0d615f3fa4c70bd7",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    },
+    {
+      "path": "pictures4test/4X1A9827.CR3",
+      "bytes": 19154266,
+      "sha256": "fd143198a3c7d6a27832bc2a699486a4b54a77b1fc4098f0e0bde92f0d47e4a5",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 5
+    },
+    {
+      "path": "pictures4test/4X1A9827.JPG",
+      "bytes": 5569734,
+      "sha256": "e81684fdafd751ed1e584c0a68a8af00ccbb04cd18ccaf42e2692e8a740f95c7",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    },
+    {
+      "path": "pictures4test/4X1A9954.CR3",
+      "bytes": 16123226,
+      "sha256": "06a291c27b88669ddc35c02c8716e350ecc16b9421c1fcb82304486b3c5ba2ec",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth",
+      "rawSensorSize": [
+        7128,
+        4732
+      ],
+      "visibleBeforeInsetCrop": [
+        6984,
+        4660
+      ],
+      "vendorInsetCrop": [
+        6960,
+        4640
+      ],
+      "flip": 5
+    },
+    {
+      "path": "pictures4test/4X1A9954.JPG",
+      "bytes": 9638453,
+      "sha256": "951714724c2eef118228ea49c1eb29cc140ccfbf5ca458896d2a19b73eb1a560",
+      "camera": "Canon EOS R7 (user confirmed)",
+      "normalizedSize": [
+        4640,
+        6960
+      ],
+      "expectedPreview": [
+        2560,
+        3840
+      ],
+      "role": "local RAW/JPEG regression; not redistribution or colorimetric ground truth"
+    }
+  ],
+  "missing": [
+    "fixed quality reference/RAW editing validation",
+    "representative target-machine sustained-load tests"
+  ],
+  "unverified": [
+    "real near-45MP CR3; user says not required to block current R7 work"
+  ]
+}

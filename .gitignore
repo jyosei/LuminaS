@@ -1,0 +1,54 @@
+/.tools/
+/build/
+/CMakeUserPresets.json
+/aqtinstall.log
+/pictures4test/
+
+# Machine configuration and worker sessions
+/.codex/
+/.dsh_ui_ctx/
+/.dsh-scratch/
+/AppData-probe-temp/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local distributions, historical browser prototypes and review snapshots
+/dist/
+/deliverables/
+/prototype/
+/handoff/qa/
+/handoff/qa-results/
+/handoff/sol-implementation-v1/references/prototype/
+/assets/branding/LuminaS-graphic-concept-v1.png
+
+# Engineering records retain their authored Markdown, not generated QA data
+/docs/engineering/*
+!/docs/engineering/*.md
+
+# Generated binaries, caches and editor state
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.log
+*.tmp
+*.bak
+*.zip
+*.7z
+__pycache__/
+*.py[cod]
+node_modules/
+.venv/
+.vs/
+.idea/
+*.user
+.DS_Store
+Thumbs.db
