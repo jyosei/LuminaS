@@ -1,6 +1,6 @@
 # S3 A2 数据与历史接口决策
 
-2026-10-15，GPT 架构决策。A2 尚未实施；本合同不代表笔刷或保存已经可用。实现入口为 `src/core/photo_document.h/.cpp`（计划新增），保留现有 Recipe 与预设语义。
+2026-10-15，GPT 架构决策。A2 记录/JSON/历史接口已经实现，实际验收见 [S3-A-RESULTS.md](S3-A-RESULTS.md)；本合同不代表笔刷或保存已经可用。实现入口为 `src/core/photo_document.h/.cpp`，保留现有 Recipe 与预设语义。
 
 ## 记录类型
 
@@ -28,6 +28,7 @@
 
 - 保留 `commit(path,Recipe,name)`、value/undo/redo/nextUndo/nextRedo。value 返回当前快照的 global；没有状态仍返回默认 Recipe。
 - 新增 `snapshot(path)`、`commitSnapshot(path,DocumentSnapshot,name)` 和原子 `resetDocuments(...)`。reset 校验全部文档后才清旧历史，用于项目重开；失败不改变原状态。
+- `bindAsset(path,asset,error)` 在不创建历史项的情况下建立/补全源事实。相同路径已有稳定 id 不得换掉，已知 hash/尺寸不能悄悄变更；未知 hash/尺寸可补全，未知字段保留。历史中的同源快照通过新副本补全元数据，已向后台发出的旧 const 快照不变。Window 后续在导入时先建立源身份，再在读取完成时补全。
 - 当前值以文档快照为唯一真相，不能并列维护互相独立的 Recipe 与 locals 两套状态。首次旧 commit 可创建源身份尚未完整的编辑态文档；asset id 在同一路径后续历史中保持稳定。
 - EditCommand 可保留 before/after Recipe 字段供原调用兼容，并追加 beforeDocument/afterDocument 小快照引用。跨图仍只有一条有序时间线；新提交丢弃 redo 分支，非法/无内容变化不提交。
 - 每个路径的 revision 单调递增，Undo/Redo 不恢复旧 revision。locals 改变时 localIdentity 同样前进；恢复旧几何/组成项的稳定 id 与顺序，不重新生成。

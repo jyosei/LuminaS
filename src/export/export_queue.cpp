@@ -4,7 +4,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QSaveFile>
+#include "io/atomic_file.h"
 #include <QSet>
 #include <QtConcurrentRun>
 namespace Export {
@@ -29,8 +29,8 @@ bool Queue::save(QString &error){
     const auto bytes=QJsonDocument(QJsonObject{{"version",1},{"jobs",jobs}}).toJson(QJsonDocument::Compact);
     if(bytes.size()>16*1024*1024){error=QStringLiteral("导出队列记录超过16MiB");return false;}
     if(!QDir().mkpath(QFileInfo(record).absolutePath())){error=QStringLiteral("无法创建导出队列目录");return false;}
-    QSaveFile f(record);f.setDirectWriteFallback(false);
-    if(!f.open(QIODevice::WriteOnly)||f.write(bytes)!=bytes.size()||!f.commit()){error=QStringLiteral("导出队列保存失败：")+f.errorString();return false;}
+    QString writeError;
+    if(!Persistence::writeAtomicBytes(record,bytes,writeError)){error=QStringLiteral("导出队列保存失败：")+writeError;return false;}
     persistenceError.clear();return true;
 }
 bool Queue::load(QString &error){
