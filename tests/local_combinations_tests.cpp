@@ -92,6 +92,46 @@ bool agrees(const QImage &a,const QImage &b){
 class LocalCombinationsTests:public QObject {
     Q_OBJECT
 private slots:
+    void rotatedCropMatchesIndependentSourceSupport(){
+        SourceFrame s;s.linear=QImage(600,400,QImage::Format_RGBA32FPx4);
+        for(int y=0;y<400;++y){auto *p=reinterpret_cast<float *>(s.linear.scanLine(y));
+            for(int x=0;x<600;++x){p[4*x]=.2f;p[4*x+1]=.3f;p[4*x+2]=.4f;p[4*x+3]=1;}}
+        int cases=0,exposed=0;double worstAlpha=0,worstRgb=0,minimumSafeAlpha=1;
+        for(double angle:{-45.,-7.,0.,7.,45.})for(const auto crop:{QRectF(0,0,1,1),QRectF(.2,.22,.6,.56)})
+        for(int flips=0;flips<4;++flips)for(int edge:{0,200}){
+            Recipe r;r.angle=angle;r.crop=crop;r.flipHorizontal=flips&1;r.flipVertical=flips&2;
+            QString error;const auto out=renderLinear(s,r,edge,error);QVERIFY2(error.isEmpty(),qPrintable(error));QVERIFY(!out.isNull());
+            QCOMPARE(out.format(),QImage::Format_RGBA32FPx4);
+            const bool full=crop==QRectF(0,0,1,1),safe=angle==0||(!full&&std::abs(angle)==7);
+            const double a=angle*3.14159265358979323846/180,co=std::cos(a),si=std::sin(a);
+            int empty=0;double alphaError=0,rgbError=0,minAlpha=1;
+            for(int y=0;y<out.height();++y){const auto *row=reinterpret_cast<const float *>(out.constScanLine(y));
+                for(int x=0;x<out.width();++x){
+                    double u=(x+.5)/out.width(),v=(y+.5)/out.height();if(r.flipHorizontal)u=1-u;if(r.flipVertical)v=1-v;
+                    const double dx=(u-.5)*crop.width()*600,dy=(v-.5)*crop.height()*400;
+                    const double px=(crop.x()+crop.width()/2)*600-.5+dx*co+dy*si;
+                    const double py=(crop.y()+crop.height()/2)*400-.5-dx*si+dy*co;
+                    const int x0=int(std::floor(px)),y0=int(std::floor(py));const double fx=px-x0,fy=py-y0;
+                    double coverage=0;
+                    for(int j=0;j<2;++j)for(int i=0;i<2;++i)
+                        if(x0+i>=0&&x0+i<600&&y0+j>=0&&y0+j<400)coverage+=(i?fx:1-fx)*(j?fy:1-fy);
+                    // Neutral/unrotated resampling replicates the source edge.
+                    if(angle==0)coverage=1;
+                    const auto *p=row+4*x;alphaError=std::max(alphaError,std::abs(double(p[3])-coverage));
+                    minAlpha=std::min(minAlpha,double(p[3]));if(p[3]==0)++empty;
+                    if(coverage>1e-5)for(int c=0;c<3;++c)rgbError=std::max(rgbError,std::abs(double(p[c])-(c==0?.2:c==1?.3:.4)));
+                    else if(coverage==0)for(int c=0;c<3;++c)rgbError=std::max(rgbError,std::abs(double(p[c])));
+                }
+            }
+            QVERIFY2(alphaError<=2e-5,qPrintable(QString("alpha=%1 angle=%2 full=%3 flips=%4 edge=%5").arg(alphaError).arg(angle).arg(full).arg(flips).arg(edge)));
+            QVERIFY(rgbError<=2e-5);
+            if(full&&angle!=0){QVERIFY(empty>0);++exposed;}
+            if(safe){QVERIFY(minAlpha>.9999);minimumSafeAlpha=std::min(minimumSafeAlpha,minAlpha);}
+            worstAlpha=std::max(worstAlpha,alphaError);worstRgb=std::max(worstRgb,rgbError);++cases;
+        }
+        QCOMPARE(cases,80);QCOMPARE(exposed,32);
+        qInfo()<<"rotation-support cases"<<cases<<"exposed"<<exposed<<"maxAlphaError"<<worstAlpha<<"maxRgbError"<<worstRgb<<"minimumSafeAlpha"<<minimumSafeAlpha;
+    }
     void orderedReferenceAndCache_data(){
         QTest::addColumn<int>("combination");QTest::addColumn<bool>("raw");
         for(int i=0;i<8;++i)for(bool raw:{false,true})
