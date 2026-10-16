@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <utility>
 #include "core/document.h"
+#include "color/color_pipeline.h"
 #include "core/photo_document.h"
 #include "core/cancellation.h"
 #include "render/local_reference.h"
@@ -236,6 +237,8 @@ int main(int argc,char **argv){
     LocalPreviewCache cache;
     RenderView cachedView;cachedView.localMaskVisible=app.arguments().contains("--overlay");cachedView.localMaskLayer=layer.id;
     QJsonArray cachedEffectMs,cachedMaskMs;double cachedColdMs=0;QString indexedHash;
+    const bool stageProfile=app.arguments().contains("--stages");
+    QJsonArray cachedLinearMs,floatCopyMs,standaloneSrgbMs;
     for(int round=0;round<4;++round){
         document.layers[0].parameters.exposure=.5+.1*round;
         document.layers[0].version++;document.revision++;document.localIdentity++;
@@ -251,6 +254,28 @@ int main(int argc,char **argv){
         const auto referenceEffect=renderDocumentPreview(source,document,document.global);
         if(referenceEffect.image.isNull()||rendered.image!=referenceEffect.image){
             qCritical("cached effect disagrees with uncached effect");return 1;
+        }
+        // Profile only after the normal measurement and correctness check. In
+        // particular, do not prime the cold cache with an extra linear render.
+        if(stageProfile&&round>0){
+            QString stageError;
+            timer.restart();
+            const auto linear=renderDocumentPreviewLinear(source,document,document.global,
+                3840,stageError,{},&cache);
+            const double linearElapsed=timer.nsecsElapsed()/1e6;
+            if(linear.isNull()||!stageError.isEmpty()){qCritical().noquote()<<stageError;return 1;}
+            timer.restart();
+            const auto copied=linear.copy();
+            const double copyElapsed=timer.nsecsElapsed()/1e6;
+            if(copied.isNull()||copied.size()!=linear.size()){qCritical("float copy failed");return 1;}
+            timer.restart();
+            const auto converted=workToSrgb(linear,stageError);
+            const double srgbElapsed=timer.nsecsElapsed()/1e6;
+            if(converted.isNull()||!stageError.isEmpty()||converted!=rendered.image){
+                qCritical("standalone sRGB conversion disagrees with preview");return 1;
+            }
+            cachedLinearMs.append(linearElapsed);floatCopyMs.append(copyElapsed);
+            standaloneSrgbMs.append(srgbElapsed);
         }
     }
     const auto cacheStats=cache.stats();
@@ -274,6 +299,10 @@ int main(int argc,char **argv){
         {QStringLiteral("cachedColdRgbEffectMs"),cachedColdMs},
         {QStringLiteral("cachedParameterDragRgbEffectMs"),cachedEffectMs},
         {QStringLiteral("cachedMaskViewMs"),cachedMaskMs},
+        {QStringLiteral("stageProfile"),stageProfile},
+        {QStringLiteral("cachedLinearMs"),cachedLinearMs},
+        {QStringLiteral("floatCopyMs"),floatCopyMs},
+        {QStringLiteral("standaloneSrgbMs"),standaloneSrgbMs},
         {QStringLiteral("indexedMaskSha256"),indexedHash},
         {QStringLiteral("overlay"),cachedView.localMaskVisible},
         {QStringLiteral("cacheBuilds"),double(cacheStats.builds)},

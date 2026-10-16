@@ -81,13 +81,14 @@ QImage workToSrgbAffine(const QImage &linear,const std::array<float,9> &edit,con
     for(float v:offset)if(!std::isfinite(v)){error="Nonfinite color offset";return {};}
     if(!tables.valid||linear.isNull()||linear.format()!=QImage::Format_RGBA32FPx4){error="Invalid SDR transform/frame";return {};}
     QImage result(linear.size(),QImage::Format_RGBA8888);if(result.isNull()){error="SDR allocation";return {};}
-    static QThreadPool pool;pool.setMaxThreadCount(4);QFuture<void> jobs[4];
+    constexpr int workers=6;
+    static QThreadPool pool;pool.setMaxThreadCount(workers);QFuture<void> jobs[workers];
     // Detach once; threads write disjoint rows using the stable buffer pointers.
     auto *destination=result.bits();const auto *source=linear.constBits();const auto inStride=linear.bytesPerLine(),outStride=result.bytesPerLine();
     std::array<float,9> matrix{};std::array<float,3> translation{};std::atomic<bool> invalid{false};
     for(int c=0;c<3;++c){for(int j=0;j<3;++j)for(int k=0;k<3;++k)matrix[c*3+j]+=tables.matrix[c*3+k]*edit[k*3+j];for(int k=0;k<3;++k)translation[c]+=tables.matrix[c*3+k]*offset[k];}
-    for(int part=0;part<4;++part)jobs[part]=QtConcurrent::run(&pool,[&,part]{
-        for(int y=linear.height()*part/4;y<linear.height()*(part+1)/4;++y){if(isCanceled(cancel))return;auto *out=destination+y*outStride;const auto *in=reinterpret_cast<const float *>(source+(flipVertical?linear.height()-1-y:y)*inStride);
+    for(int part=0;part<workers;++part)jobs[part]=QtConcurrent::run(&pool,[&,part]{
+        for(int y=linear.height()*part/workers;y<linear.height()*(part+1)/workers;++y){if(isCanceled(cancel))return;auto *out=destination+y*outStride;const auto *in=reinterpret_cast<const float *>(source+(flipVertical?linear.height()-1-y:y)*inStride);
             for(int x=0;x<linear.width();++x){const auto *pixel=in+(flipHorizontal?linear.width()-1-x:x)*4;for(int c=0;c<4;++c)if(!std::isfinite(pixel[c])){invalid=true;return;}
                 const float alpha=std::clamp(pixel[3],0.f,1.f);
                 if(alpha<=1e-8f){out[x*4]=out[x*4+1]=out[x*4+2]=0;out[x*4+3]=quint8(alpha*255+.5f);continue;}
