@@ -1,7 +1,9 @@
 #include "app/local_adjustment_panel.h"
 #include <QtTest>
+#include <cmath>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
@@ -38,11 +40,53 @@ DocumentSnapshot snapshotOf(const QVector<AdjustmentLayer> &layers){
     document->layers=layers;
     return document;
 }
+
+// The nine local parameters in the panel's documented visual order. The index is
+// reset-button numbers remain enum order, independently of this visual order.
+const QStringList &fieldKeys(){
+    static const QStringList keys{QStringLiteral("exposure"),QStringLiteral("contrast"),
+        QStringLiteral("highlights"),QStringLiteral("shadows"),QStringLiteral("whites"),
+        QStringLiteral("blacks"),QStringLiteral("warmth"),QStringLiteral("tint"),
+        QStringLiteral("saturation")};
+    return keys;
+}
+int indexOfField(const QString &key){
+    if(key==QStringLiteral("exposure"))return 0;
+    if(key==QStringLiteral("saturation"))return 1;
+    return fieldKeys().indexOf(key)+1;
+}
+
+double defaultValueOf(const QString &key){return key==QStringLiteral("saturation")?1.0:0.0;}
+
+// Reads one named member of a parameter value without an object-name lookup, so
+// a test failure names the field that actually drifted.
+double valueOf(const LocalParameters &parameters,const QString &key){
+    if(key==QStringLiteral("exposure"))return parameters.exposure;
+    if(key==QStringLiteral("contrast"))return parameters.contrast;
+    if(key==QStringLiteral("highlights"))return parameters.highlights;
+    if(key==QStringLiteral("shadows"))return parameters.shadows;
+    if(key==QStringLiteral("whites"))return parameters.whites;
+    if(key==QStringLiteral("blacks"))return parameters.blacks;
+    if(key==QStringLiteral("warmth"))return parameters.warmth;
+    if(key==QStringLiteral("tint"))return parameters.tint;
+    return parameters.saturation;
+}
 }
 
 class LocalAdjustmentPanelTests : public QObject {
     Q_OBJECT
 private slots:
+    void parameterRowsFollowPhotographicOrder(){
+        LocalAdjustmentPanel panel;
+        auto *spin=panel.findChild<QDoubleSpinBox *>("local-exposure");QVERIFY(spin);
+        auto *form=qobject_cast<QFormLayout *>(spin->parentWidget()->layout());QVERIFY(form);
+        const QStringList labels{QStringLiteral("曝光"),QStringLiteral("对比"),QStringLiteral("高光"),QStringLiteral("阴影"),
+            QStringLiteral("白色"),QStringLiteral("黑色"),QStringLiteral("暖冷"),QStringLiteral("色调"),QStringLiteral("饱和度")};
+        QCOMPARE(form->rowCount(),labels.size());
+        for(int i=0;i<labels.size();++i){
+            auto *label=qobject_cast<QLabel *>(form->itemAt(i,QFormLayout::LabelRole)->widget());QVERIFY(label);QCOMPARE(label->text(),labels[i]);
+        }
+    }
     void init(){
         qRegisterMetaType<LocalParameters>("LocalEdit::LocalParameters");
         qRegisterMetaType<BrushSettings>("LocalEdit::BrushSettings");
@@ -54,6 +98,10 @@ private slots:
     void availabilityGatesControlsAndShowsWaitingHint();
     void brushSettingsAndClampedRadius();
     void visibilityToggleReportsStableId();
+    void parameterFieldsDefaultRangeAndIsolation_data();
+    void parameterFieldsDefaultRangeAndIsolation();
+    void parameterResetPerField_data();
+    void parameterResetPerField();
     void brushSlidersSynchronizeAndEraseActivatesBrush(){
         LocalAdjustmentPanel panel;panel.setAvailable(true);
         panel.setDocument(snapshotOf({layer("sync","同步")}));
@@ -382,6 +430,120 @@ void LocalAdjustmentPanelTests::visibilityToggleReportsStableId(){
     QCOMPARE(changed.count(),2);
     QCOMPARE(changed.last().at(0).toString(),QStringLiteral("a"));
     QCOMPARE(changed.last().at(1).toBool(),false);
+}
+
+// The visual order of the nine compact parameter rows; each entry names the
+// object-name key, the widget label, the documented default and the bounds.
+struct FieldCase { const char *key; double defaultValue,minimum,maximum; };
+
+static const FieldCase kFields[]={
+    {"exposure",0,-5,5},{"contrast",0,-1,1},{"highlights",0,-1,1},{"shadows",0,-1,1},
+    {"whites",0,-1,1},{"blacks",0,-1,1},{"warmth",0,-1,1},{"tint",0,-1,1},{"saturation",1,0,2},
+};
+
+// Every field is checked through its own widgets: the row exists, the documented
+// default and range are wired to both the spin box and the hundred-step slider,
+// the labels are present, and a slider drag changes exactly one field.
+void LocalAdjustmentPanelTests::parameterFieldsDefaultRangeAndIsolation_data(){
+    QTest::addColumn<QString>("key");
+    QTest::addColumn<double>("defaultValue");
+    QTest::addColumn<double>("minimum");
+    QTest::addColumn<double>("maximum");
+    for(const FieldCase &field:kFields)
+        QTest::newRow(field.key)<<QString::fromLatin1(field.key)<<field.defaultValue
+                                <<field.minimum<<field.maximum;
+}
+
+void LocalAdjustmentPanelTests::parameterFieldsDefaultRangeAndIsolation(){
+    QFETCH(QString,key);
+    QFETCH(double,defaultValue);
+    QFETCH(double,minimum);
+    QFETCH(double,maximum);
+
+    LocalAdjustmentPanel panel;panel.setAvailable(true);
+    AdjustmentLayer neutral;neutral.id="a";neutral.name=layerName(0);
+    panel.setDocument(snapshotOf({neutral}));
+    QDoubleSpinBox *spin=panel.findChild<QDoubleSpinBox *>("local-"+key);
+    QSlider *slider=panel.findChild<QSlider *>("slider-local-"+key);
+    QPushButton *reset=panel.findChild<QPushButton *>("local-reset-"+QString::number(indexOfField(key)));
+    QVERIFY2(spin,"missing spin box");
+    QVERIFY2(slider,"missing slider");
+    QVERIFY2(reset,"missing reset button");
+
+    // Documented default, range and shared presentation rules.
+    QCOMPARE(spin->value(),defaultValue);
+    QCOMPARE(spin->minimum(),minimum);
+    QCOMPARE(spin->maximum(),maximum);
+    QCOMPARE(spin->decimals(),2);
+    QCOMPARE(slider->minimum(),static_cast<int>(std::lround(minimum*100)));
+    QCOMPARE(slider->maximum(),static_cast<int>(std::lround(maximum*100)));
+    QCOMPARE(slider->value(),static_cast<int>(std::lround(defaultValue*100)));
+    QVERIFY(!spin->toolTip().isEmpty());
+    QVERIFY(!spin->accessibleName().isEmpty());
+    QVERIFY(!slider->toolTip().isEmpty());
+    QVERIFY(!slider->accessibleName().isEmpty());
+    QVERIFY(!reset->toolTip().isEmpty());
+    QVERIFY(!reset->accessibleName().isEmpty());
+
+    // Moving this slider reports this field once and leaves the other eight at the
+    // values the layer carries (here every one of them is at its default).
+    const double target=defaultValue==0?.5:1.5;
+    if(target!=defaultValue){
+        QSignalSpy edited(&panel,&LocalAdjustmentPanel::parametersEdited);
+        QSignalSpy finished(&panel,&LocalAdjustmentPanel::parametersFinished);
+        slider->setSliderDown(true);
+        slider->setValue(static_cast<int>(std::lround(target*100)));
+        QCOMPARE(edited.count(),1);
+        const LocalParameters changed=edited.first().at(1).value<LocalParameters>();
+        for(const FieldCase &other:kFields){
+            const double expected=QString::fromLatin1(other.key)==key?target:other.defaultValue;
+            QCOMPARE(valueOf(changed,other.key),expected);
+        }
+        QCOMPARE(spin->value(),target);
+        slider->setSliderDown(false);
+        QCOMPARE(finished.count(),1);
+    }
+}
+
+// Clicking one row's reset restores that field's default only; every other field
+// keeps the value the layer already carried.
+void LocalAdjustmentPanelTests::parameterResetPerField_data(){
+    QTest::addColumn<QString>("key");
+    QTest::addColumn<double>("defaultValue");
+    for(const FieldCase &field:kFields)
+        QTest::newRow(field.key)<<QString::fromLatin1(field.key)<<field.defaultValue;
+}
+
+void LocalAdjustmentPanelTests::parameterResetPerField(){
+    QFETCH(QString,key);
+    QFETCH(double,defaultValue);
+
+    LocalAdjustmentPanel panel;panel.setAvailable(true);
+    // The layer is pushed away from every default through the public signals, so
+    // a reset that wiped its neighbours would be visible.
+    panel.setDocument(snapshotOf({layer(QStringLiteral("a"),layerName(0))}));
+    for(const QString &other:fieldKeys()){
+        QDoubleSpinBox *box=panel.findChild<QDoubleSpinBox *>("local-"+other);
+        QVERIFY(box);
+        box->setValue(defaultValueOf(other)==0?0.75:1.75);
+    }
+    QDoubleSpinBox *spin=panel.findChild<QDoubleSpinBox *>("local-"+key);
+    QVERIFY(spin);
+    const double moved=spin->value();
+    QCOMPARE(moved,defaultValue==0?0.75:1.75);
+
+    QSignalSpy edited(&panel,&LocalAdjustmentPanel::parametersEdited);
+    QSignalSpy finished(&panel,&LocalAdjustmentPanel::parametersFinished);
+    panel.findChild<QPushButton *>("local-reset-"+QString::number(indexOfField(key)))->click();
+    QCOMPARE(edited.count(),1);
+    QCOMPARE(finished.count(),1);
+    const LocalParameters reset=edited.first().at(1).value<LocalParameters>();
+    QCOMPARE(valueOf(reset,key),defaultValue);
+    QCOMPARE(spin->value(),defaultValue);
+    for(const FieldCase &other:kFields){
+        if(QString::fromLatin1(other.key)==key)continue;
+        QCOMPARE(valueOf(reset,other.key),other.defaultValue==0?0.75:1.75);
+    }
 }
 
 QTEST_MAIN(LocalAdjustmentPanelTests)

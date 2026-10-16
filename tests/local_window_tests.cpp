@@ -4,6 +4,7 @@
 #include <QLineEdit>
 #include <QSignalSpy>
 #include <QSlider>
+#include <QScrollArea>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QMouseEvent>
@@ -39,6 +40,43 @@ QString sample(QTemporaryDir &directory,QString name){
 class LocalWindowTests:public QObject {
     Q_OBJECT
 private slots:
+    void allNineControlsReachWindowHistory(){
+        QTemporaryDir directory;const auto path=sample(directory,"nine-parameters.jpg");QVERIFY(!path.isEmpty());
+        Window window(nullptr,QStringLiteral(""));auto *canvas=window.findChild<Canvas *>("photo-canvas");QVERIFY(canvas);
+        canvas->setMonitorProfile({},"nine-parameter-test");QSignalSpy painted(canvas,&Canvas::canonicalFramePainted);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.addFiles({path});
+        QVERIFY(waitFor([&]{return ready(window,canvas,painted);}));
+        auto *tabs=window.findChild<QTabWidget *>("adjustment-scope-tabs");QVERIFY(tabs);tabs->setCurrentIndex(1);
+        painted.clear();QTest::mouseClick(window.findChild<QPushButton *>("local-new-brush"),Qt::LeftButton);
+        QVERIFY(waitFor([&]{return ready(window,canvas,painted)&&canvas->brushMode();}));
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,point(canvas,.4,.5));
+        QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,point(canvas,.6,.5));
+        const auto mask=window.currentPhotoDocument()->layers[0].mask;
+        QVERIFY(!mask.components.isEmpty());
+        struct Field {const char *name;double LocalEdit::LocalParameters::*member;};
+        const Field fields[]{{"exposure",&LocalEdit::LocalParameters::exposure},{"contrast",&LocalEdit::LocalParameters::contrast},
+            {"highlights",&LocalEdit::LocalParameters::highlights},{"shadows",&LocalEdit::LocalParameters::shadows},
+            {"whites",&LocalEdit::LocalParameters::whites},{"blacks",&LocalEdit::LocalParameters::blacks},
+            {"warmth",&LocalEdit::LocalParameters::warmth},{"tint",&LocalEdit::LocalParameters::tint},{"saturation",&LocalEdit::LocalParameters::saturation}};
+        auto *scroll=qobject_cast<QScrollArea *>(tabs->widget(1));QVERIFY(scroll);
+        LocalEdit::LocalParameters expected;
+        for(const auto &field:fields){
+            auto *spin=window.findChild<QDoubleSpinBox *>(QString("local-%1").arg(field.name));QVERIFY(spin);
+            scroll->ensureWidgetVisible(spin);QTest::qWait(20);
+            QVERIFY2(spin->visibleRegion().contains(spin->rect()),field.name);
+            expected.*(field.member)+=.2;painted.clear();
+            spin->setValue(expected.*(field.member));QMetaObject::invokeMethod(spin,"editingFinished",Qt::DirectConnection);
+            QVERIFY(waitFor([&]{return ready(window,canvas,painted);}));
+            QCOMPARE(window.currentPhotoDocument()->layers[0].parameters,expected);
+            QCOMPARE(window.currentPhotoDocument()->layers[0].mask,mask);
+        }
+        for(int i=8;i>=0;--i){
+            painted.clear();window.undoEdit();expected.*(fields[i].member)=i==8?1:0;
+            QCOMPARE(window.currentPhotoDocument()->layers[0].parameters,expected);
+            QCOMPARE(window.currentPhotoDocument()->layers[0].mask,mask);
+            QVERIFY(waitFor([&]{return ready(window,canvas,painted);}));
+        }
+    }
     void pendingParameterCommitDoesNotEndNewBrushPress(){
         QTemporaryDir directory;const auto path=sample(directory,"pending-parameter.jpg");QVERIFY(!path.isEmpty());
         Window window(nullptr,QStringLiteral(""));auto *canvas=window.findChild<Canvas *>("photo-canvas");QVERIFY(canvas);

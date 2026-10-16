@@ -349,5 +349,3 @@ int main(int argc, char **argv) {
     emitReport(report);
     return ok ? 0 : 1;
 }
-
-

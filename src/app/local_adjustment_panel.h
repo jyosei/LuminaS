@@ -13,6 +13,7 @@
 
 class QCheckBox;
 class QDoubleSpinBox;
+class QFormLayout;
 class QLabel;
 class QListWidget;
 class QPushButton;
@@ -64,7 +65,18 @@ signals:
     void overlayToggled(bool visible);
 
 private:
-    enum Field { Exposure,Saturation,FieldCount };
+    // The compact parameter block covers the nine local parameters. The two
+    // historical enumerators keep their original values so the existing object
+    // names and the reset buttons stay compatible; the seven remaining fields
+    // are appended. Row order is the documented visual order.
+    enum Field { Exposure=0,Saturation=1,Contrast,Highlights,Shadows,Whites,Blacks,Warmth,Tint,FieldCount };
+    struct FieldSpec { // one shared description drives every field's widgets
+        Field field;
+        const char *key;      // object-name suffix: local-<key> / slider-local-<key>
+        double minimum,maximum,defaultValue;
+        const char *label;    // form-row and tooltip label
+        double LocalEdit::LocalParameters::*member;
+    };
     struct Row {
         QDoubleSpinBox *spin=nullptr;
         QSlider *slider=nullptr;
@@ -77,10 +89,13 @@ private:
     };
 
     void buildUi();
+    void buildParameterRow(const FieldSpec &spec); // one described parameter row
     void refreshList();       // rebuilds rows from the stored layers without emitting
     void refreshControls();   // enables/disables and re-reads the selected layer
     void syncVisibility();    // the selected-layer checkbox only
     void syncRow(Field field,double value);
+    static const FieldSpec *fieldSpecs();      // nine entries, visual order
+    static const FieldSpec &specOf(Field field);
     void syncBrushControls();
     int selectedRow() const;
     Layer *selectedLayer();
@@ -120,6 +135,7 @@ private:
     QCheckBox *m_visible=nullptr;
     QLabel *m_hint=nullptr;
     QWidget *m_parameters=nullptr;
+    QFormLayout *m_parameterForm=nullptr;
     QWidget *m_brushBox=nullptr;
     QDoubleSpinBox *m_radiusSpin=nullptr;
     QSlider *m_radiusSlider=nullptr;

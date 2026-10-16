@@ -16,10 +16,9 @@
 #include <cmath>
 
 namespace {
-// The compact block shows only exposure and saturation. Contrast and the five
-// remaining tonal/color fields travel verbatim inside each emitted layer copy.
-constexpr double kExposureMinimum=-5,kExposureMaximum=5;
-constexpr double kSaturationMinimum=0,kSaturationMaximum=2;
+// The nine described local parameters share one table: bounds, default and
+// label live in exactly one place, so every row is built by the same code.
+constexpr int kParameterMinimum=-1,kParameterMaximum=1;
 constexpr double kRadiusMinimum=1,kRadiusMaximum=10000;
 constexpr int kSliderSteps=100; // hundredths of the unit field
 constexpr int kListMaximumHeight=170;
@@ -29,17 +28,6 @@ double clampValue(double value,double minimum,double maximum){
 }
 int stepsOf(double value){return static_cast<int>(std::lround(value*kSliderSteps));}
 int unitSteps(double value){return static_cast<int>(std::lround(value*100));}
-
-// Optional read-only reset affordance for the two compact fields.
-QPushButton *resetButton(QWidget *parent,int field,const QString &label){
-    QPushButton *button=new QPushButton(Ui::icon(Ui::Glyph::Reset),QString(),parent);
-    button->setIconSize({14,14});
-    button->setFixedWidth(25);
-    button->setObjectName(QStringLiteral("local-reset-%1").arg(field));
-    button->setToolTip(QCoreApplication::translate("LocalAdjustmentPanel","将此字段恢复为默认值"));
-    button->setAccessibleName(QCoreApplication::translate("LocalAdjustmentPanel","重置%1").arg(label));
-    return button;
-}
 }
 
 LocalAdjustmentPanel::LocalAdjustmentPanel(QWidget *parent):QWidget(parent){
@@ -108,55 +96,10 @@ void LocalAdjustmentPanel::buildUi(){
     form->setContentsMargins(0,0,0,0);
     form->setSpacing(4);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-    {
-        QHBoxLayout *box=new QHBoxLayout;
-        box->setContentsMargins(0,0,0,0);
-        box->setSpacing(4);
-        QDoubleSpinBox *spin=new QDoubleSpinBox(m_parameters);
-        spin->setObjectName(QStringLiteral("local-exposure"));
-        spin->setRange(kExposureMinimum,kExposureMaximum);
-        spin->setSingleStep(.05);
-        spin->setDecimals(2);
-        spin->setValue(0);
-        spin->setToolTip(tr("局部曝光，单位为曝光值"));
-        spin->setAccessibleName(tr("局部曝光"));
-        QSlider *slider=new QSlider(Qt::Horizontal,m_parameters);
-        slider->setObjectName(QStringLiteral("slider-local-exposure"));
-        slider->setRange(stepsOf(kExposureMinimum),stepsOf(kExposureMaximum));
-        slider->setValue(0);
-        slider->setToolTip(tr("局部曝光滑块"));
-        slider->setAccessibleName(tr("局部曝光滑块"));
-        QPushButton *reset=resetButton(m_parameters,Exposure,tr("局部曝光"));
-        box->addWidget(slider,1);
-        box->addWidget(spin);
-        box->addWidget(reset);
-        form->addRow(tr("曝光"),box);
-        m_rows[Exposure]={spin,slider,reset};
-    }
-    {
-        QHBoxLayout *box=new QHBoxLayout;
-        box->setContentsMargins(0,0,0,0);
-        box->setSpacing(4);
-        QDoubleSpinBox *spin=new QDoubleSpinBox(m_parameters);
-        spin->setObjectName(QStringLiteral("local-saturation"));
-        spin->setRange(kSaturationMinimum,kSaturationMaximum);
-        spin->setSingleStep(.01);
-        spin->setDecimals(2);
-        spin->setValue(1);
-        spin->setToolTip(tr("局部饱和度"));
-        spin->setAccessibleName(tr("局部饱和度"));
-        QSlider *slider=new QSlider(Qt::Horizontal,m_parameters);
-        slider->setObjectName(QStringLiteral("slider-local-saturation"));
-        slider->setRange(stepsOf(kSaturationMinimum),stepsOf(kSaturationMaximum));
-        slider->setValue(kSliderSteps);
-        slider->setToolTip(tr("局部饱和度滑块"));
-        slider->setAccessibleName(tr("局部饱和度滑块"));
-        QPushButton *reset=resetButton(m_parameters,Saturation,tr("局部饱和度"));
-        box->addWidget(slider,1);
-        box->addWidget(spin);
-        box->addWidget(reset);
-        form->addRow(tr("饱和度"),box);
-        m_rows[Saturation]={spin,slider,reset};
+    m_parameterForm=form;
+    for(int i=0;i<FieldCount;++i){
+        const FieldSpec &spec=fieldSpecs()[i];
+        buildParameterRow(spec);
     }
     layout->addWidget(m_parameters);
 
@@ -287,6 +230,67 @@ void LocalAdjustmentPanel::buildUi(){
     connect(m_strengthSlider,&QSlider::valueChanged,this,[this](int v){handleStrengthChanged(v/100.0);});
 }
 
+// Nine entries in the documented visual order, keyed by their stable enum value.
+const LocalAdjustmentPanel::FieldSpec *LocalAdjustmentPanel::fieldSpecs(){
+    static const FieldSpec specs[]={
+        {Exposure,  "exposure",  -5,5,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","曝光"),&LocalEdit::LocalParameters::exposure},
+        {Contrast,  "contrast",  kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","对比"),&LocalEdit::LocalParameters::contrast},
+        {Highlights,"highlights",kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","高光"),&LocalEdit::LocalParameters::highlights},
+        {Shadows,   "shadows",   kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","阴影"),&LocalEdit::LocalParameters::shadows},
+        {Whites,    "whites",    kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","白色"),&LocalEdit::LocalParameters::whites},
+        {Blacks,    "blacks",    kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","黑色"),&LocalEdit::LocalParameters::blacks},
+        {Warmth,    "warmth",    kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","暖冷"),&LocalEdit::LocalParameters::warmth},
+        {Tint,      "tint",      kParameterMinimum,kParameterMaximum,0, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","色调"),&LocalEdit::LocalParameters::tint},
+        {Saturation,"saturation",0,2,1, QT_TRANSLATE_NOOP("LocalAdjustmentPanel","饱和度"),&LocalEdit::LocalParameters::saturation},
+    };
+    static_assert(sizeof(specs)/sizeof(specs[0])==FieldCount,"one spec per field");
+    return specs;
+}
+
+const LocalAdjustmentPanel::FieldSpec &LocalAdjustmentPanel::specOf(Field field){
+    const FieldSpec *specs=fieldSpecs();
+    for(int i=0;i<FieldCount;++i)if(specs[i].field==field)return specs[i];
+    return specs[0];
+}
+
+// One shared shape for every parameter row: left label, growing slider, spin box
+// and a per-field reset button. Sliders are always hundredths of the field unit,
+// spin boxes always show two decimals, and no row carries its own font or color.
+void LocalAdjustmentPanel::buildParameterRow(const FieldSpec &spec){
+    const QString key=QString::fromLatin1(spec.key);
+    const QString label=tr(spec.label);
+    const QString qualified=tr("局部%1").arg(label);
+    QHBoxLayout *box=new QHBoxLayout;
+    box->setContentsMargins(0,0,0,0);
+    box->setSpacing(4);
+    QSlider *slider=new QSlider(Qt::Horizontal,m_parameters);
+    slider->setObjectName(QStringLiteral("slider-local-%1").arg(key));
+    slider->setRange(stepsOf(spec.minimum),stepsOf(spec.maximum));
+    slider->setValue(stepsOf(spec.defaultValue));
+    slider->setToolTip(tr("%1滑块").arg(qualified));
+    slider->setAccessibleName(tr("%1滑块").arg(qualified));
+    QDoubleSpinBox *spin=new QDoubleSpinBox(m_parameters);
+    spin->setObjectName(QStringLiteral("local-%1").arg(key));
+    spin->setRange(spec.minimum,spec.maximum);
+    spin->setSingleStep(spec.field==Exposure?.05:.01);
+    spin->setDecimals(2);
+    spin->setValue(spec.defaultValue);
+    spin->setToolTip(spec.field==Exposure?tr("局部曝光，单位为曝光值"):qualified);
+    spin->setAccessibleName(qualified);
+    QPushButton *reset=new QPushButton(Ui::icon(Ui::Glyph::Reset),QString(),m_parameters);
+    reset->setIconSize({14,14});
+    reset->setFixedWidth(25);
+    // The historical enum values 0/1 keep local-reset-0/1 on exposure/saturation.
+    reset->setObjectName(QStringLiteral("local-reset-%1").arg(static_cast<int>(spec.field)));
+    reset->setToolTip(tr("将此字段恢复为默认值"));
+    reset->setAccessibleName(tr("重置%1").arg(qualified));
+    box->addWidget(slider,1);
+    box->addWidget(spin);
+    box->addWidget(reset);
+    m_parameterForm->addRow(label,box);
+    m_rows[spec.field]={spin,slider,reset};
+}
+
 void LocalAdjustmentPanel::setDocument(LocalEdit::DocumentSnapshot snapshot,const QString &selectedId){
     m_restoring=true; // programmatic refresh: no selection or parameter signal
     m_layers.clear();
@@ -335,12 +339,16 @@ void LocalAdjustmentPanel::refreshList(){
     const int row=selectedRow();
     if(row>=0)m_list->setCurrentRow(row); // no selection signal: not a user gesture
     else m_list->setCurrentRow(-1);
+    // Give controls the space when there are few layers; the list itself scrolls
+    // once it reaches six rows instead of reserving a large empty rectangle.
+    const int rowHeight=m_list->count()>0?m_list->sizeHintForRow(0):m_list->fontMetrics().height()+8;
+    m_list->setFixedHeight(qMin(kListMaximumHeight,qMax(1,rowHeight)*qBound(2,m_list->count(),6)+2*m_list->frameWidth()));
 }
 
 void LocalAdjustmentPanel::refreshControls(){
     const bool selected=hasSelection();
     // Every tool and parameter control needs a prepared preview, so availability
-    // gates all of them; the visibility checkbox and the compact parameters
+    // gates all of them; the visibility checkbox and the nine parameter rows
     // additionally need a selected layer. Availability never mutates the stored
     // layers, and an empty new layer enables the overlay later through the host.
     const bool ready=m_available&&selected;
@@ -442,17 +450,17 @@ void LocalAdjustmentPanel::setOverlayVisible(bool visible){
 
 double LocalAdjustmentPanel::storedField(Field field) const {
     const Layer *layer=selectedLayer();
-    if(!layer)return field==Saturation?1:0;
-    return field==Exposure?layer->parameters.exposure:layer->parameters.saturation;
+    if(!layer)return specOf(field).defaultValue;
+    return layer->parameters.*(specOf(field).member);
 }
 
 void LocalAdjustmentPanel::storeField(Field field,double value){
     if(m_restoring||!std::isfinite(value))return;
     Layer *layer=selectedLayer();
     if(!layer)return;
-    double *target=field==Exposure?&layer->parameters.exposure:&layer->parameters.saturation;
-    if(*target==value)return;
-    *target=value; // exactly this field; the other seven values stay untouched
+    double &target=layer->parameters.*(specOf(field).member);
+    if(target==value)return;
+    target=value; // exactly this field; the other eight values stay untouched
     // A direct receiver can refresh the panel and replace m_layers. Keep signal
     // arguments alive until every receiver (including observers) has returned.
     const auto id=layer->id;const auto parameters=layer->parameters;
@@ -490,7 +498,9 @@ void LocalAdjustmentPanel::handleSpinChanged(Field field,double value){
 
 void LocalAdjustmentPanel::handleSliderChanged(Field field,int value){
     if(m_restoring)return;
-    const double step=1.0/kSliderSteps; // slider units are hundredths of the field unit
+    // Every slider is hundredths of its field unit, so the same conversion
+    // applies to all nine parameters while the spin box keeps 2 decimals.
+    const double step=1.0/kSliderSteps;
     storeField(field,value*step);
     syncRow(field,storedField(field));
 }
@@ -532,7 +542,7 @@ bool LocalAdjustmentPanel::eventFilter(QObject *target,QEvent *event){
 
 void LocalAdjustmentPanel::handleReset(Field field){
     if(m_restoring||!hasSelection())return;
-    storeField(field,field==Saturation?1:0); // documented default for that field only
+    storeField(field,specOf(field).defaultValue); // documented default for that field only
     syncRow(field,storedField(field));
     emit parametersFinished();
 }
