@@ -1,0 +1,32 @@
+#version 440
+layout(local_size_x=16,local_size_y=16) in;
+layout(std140,binding=0) uniform Params {
+    vec4 balanceExposure;
+    vec4 control; // contrast, saturation, opacity, identity
+    vec4 flags; // tonal enabled
+} params;
+layout(binding=1) uniform sampler2D sourceImage;
+layout(rgba32f,binding=2) writeonly uniform image2D targetImage;
+layout(binding=3) uniform sampler2D coverageImage;
+layout(binding=4) uniform sampler2D gainImage;
+void main(){
+    ivec2 pos=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(pos,imageSize(targetImage))))return;
+    vec4 pixel=texelFetch(sourceImage,pos,0);
+    float weight=texelFetch(coverageImage,pos,0).r*params.control.z;
+    if(weight==0.0||pixel.a<=1e-8||params.control.w>0.0){imageStore(targetImage,pos,pixel);return;}
+    vec3 adjusted=pixel.rgb*params.balanceExposure.rgb;
+    adjusted=(adjusted*params.balanceExposure.a-vec3(0.18))*params.control.x+vec3(0.18);
+    float luma=dot(adjusted,vec3(0.2627,0.6780,0.0593));
+    if(params.flags.x>0.0){
+        float index=clamp(luma,0.0,4.0)*1024.0;
+        int i=int(index),j=min(i+1,4096);
+        float a=texelFetch(gainImage,ivec2(i,0),0).r;
+        float b=texelFetch(gainImage,ivec2(j,0),0).r;
+        float gain=a+(b-a)*(index-float(i));
+        adjusted*=gain;luma*=gain;
+    }
+    if(params.control.y!=1.0)adjusted=vec3(luma)+(adjusted-vec3(luma))*params.control.y;
+    vec3 blended=weight==1.0?adjusted:pixel.rgb+weight*(adjusted-pixel.rgb);
+    imageStore(targetImage,pos,vec4(blended,pixel.a));
+}

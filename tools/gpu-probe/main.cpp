@@ -1,6 +1,11 @@
 // Isolated G0/G1 reference experiment. No application backend selection changes.
 #include "render/cpu_renderer.h"
 #include "color/color_pipeline.h"
+#include "render/local_reference.h"
+#include "render/local_mask.h"
+#include <QThreadPool>
+#include <QtConcurrentRun>
+#include <atomic>
 #include <QApplication>
 #include <QRhiWidget>
 #include <QPainter>
@@ -174,18 +179,20 @@ struct Pipeline {
     }
 };
 #include "presentation.inc"
+#include "local.inc"
 }
 
 int main(int argc,char **argv){
     QApplication app(argc,argv);QCommandLineParser parser;
     parser.addOptions({QCommandLineOption("report","New JSON report path","path"),QCommandLineOption("iterations","Warm measured iterations (100 minimum)","count","100"),
-        QCommandLineOption("size","small, 4k, 24mp or 45mp","size","4k"),QCommandLineOption("capabilities-only","Only check GPU support"),QCommandLineOption("present","G2 native widget experiment, fixed sRGB only")});
+        QCommandLineOption("size","small, 4k, 24mp or 45mp","size","4k"),QCommandLineOption("local","G3 resident local parameters; no presentation"),QCommandLineOption("capabilities-only","Only check GPU support"),QCommandLineOption("present","G2 native widget experiment, fixed sRGB only")});
     parser.process(app);const auto reportPath=parser.value("report");
     if(reportPath.isEmpty()||QFile::exists(reportPath)){qCritical("A new --report path is required");return 2;}
     QJsonObject report{{"schema",1},{"qtVersion",qVersion()},{"timestampUtc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
         {"scope","G0/G1 basic float32 only; no display or S3 implementation"},{"productionBackendChanged",false}};
     int exitCode=0;
     try{
+        require(!(parser.isSet("present")&&parser.isSet("local")),"Choose only one experiment mode");
         if(parser.isSet("present")){
             bool ok=false;const int iterations=parser.value("iterations").toInt(&ok);
             require(ok&&iterations>=100&&iterations<=1000,"Iterations must be 100..1000");
@@ -208,6 +215,15 @@ int main(int argc,char **argv){
         require(rhi->isFeatureSupported(QRhi::Compute)&&rhi->isTextureFormatSupported(QRhiTexture::RGBA32F,QRhiTexture::UsedWithLoadStore),"Required float32 compute support missing");
         if(!parser.isSet("capabilities-only")){
             bool ok=false;int iterations=parser.value("iterations").toInt(&ok);require(ok&&iterations>=100&&iterations<=1000,"Iterations must be 100..1000");
+            if(parser.isSet("local")){
+                require(parser.value("size")=="small"||parser.value("size")=="4k","Local experiment accepts only small or 4k");
+                report.insert("local",runLocalExperiment(rhi.get(),parser.value("size")=="small"?QSize(257,131):QSize(3840,2560),iterations));
+                report.insert("memoryAfterLocalResourcesReleased",memory(rhi.get()));
+                rhi->releaseCachedResources();
+                require(rhi->finish()==QRhi::FrameOpSuccess,"Local cache release finish failed");
+                report.insert("memoryAfterLocalCacheTrim",memory(rhi.get()));
+                report.insert("scope","G3 one resident local layer; CPU prefix/mask, no native presentation");
+            }else{
             const auto sizeName=parser.value("size");QSize size;
             if(sizeName=="small")size={257,131};else if(sizeName=="4k")size={3840,2560};else if(sizeName=="24mp")size={6000,4000};else if(sizeName=="45mp")size={9000,5000};
             require(size.isValid(),"Invalid size selection");auto source=synthetic(size);
@@ -242,6 +258,10 @@ int main(int argc,char **argv){
             report.insert("memoryFinal",memory(rhi.get()));
             report.insert("roundtripMedianReduction",1-distribution(roundtripTimes).value("medianMs").toDouble()/distribution(cpuTimes).value("medianMs").toDouble());
             report.insert("measurementLimitations",QJsonArray{"upload/command times are CPU enqueue, not isolated GPU DMA", "synchronization/readback grouped; timestamps only where supported", "resident compute excludes presentation, ICC and input decode", "synthetic input; no cross-vendor certification", "GPU statistics describe DXGI segments, not dedicated/shared physical attribution on UMA"});
+            }
+        }
+        if(parser.isSet("local")){
+            rhi.reset();report.insert("memoryAfterLocalDeviceReleased",memory(nullptr));
         }
         report.insert("passed",true);
         }
