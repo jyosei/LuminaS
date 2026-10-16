@@ -1,6 +1,7 @@
 #include "canvas.h"
 #include "display_presenter.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -61,7 +62,7 @@ void Canvas::setImage(QImage value,QString context) {
     // a geometry change ends it first.
     if(reset)finishBrushGesture(false);
     // A different document/revision must never keep showing the previous mask.
-    if(reset||context!=imageContext){localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;gradientHandles.clear();gradientHandle=-1;}
+    if(reset||context!=imageContext){localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;gradientHandles.clear();gradientGuide.clear();gradientHandle=-1;}
     image = std::move(value);
     imageContext=context;
     liveAngle=0;
@@ -113,6 +114,7 @@ void Canvas::setGradientHandles(QVector<QPointF> handles){
     if(gradientHandles==handles)return;
     gradientHandles=std::move(handles);update();
 }
+void Canvas::setGradientGuide(QVector<QPointF> points){gradientGuide=std::move(points);update();}
 int Canvas::gradientHandleAt(const QPointF &position) const{
     if(!gradientMode||!brushActive||image.isNull()||presented.isNull()||liveAngle!=0)return -1;
     int hit=-1;double nearest=9*9;
@@ -194,6 +196,15 @@ void Canvas::paintEvent(QPaintEvent *) {
     // This does not change either image serial or mask provenance.
     if(gradientMode&&brushActive&&liveAngle==0&&!presented.isNull()){
         p.resetTransform();p.setClipping(false);p.setRenderHint(QPainter::Antialiasing);
+        QPainterPath guide;bool connected=false;
+        for(const auto &uv:gradientGuide){
+            const auto point=offset+QPointF(uv.x()*image.width()*scale,uv.y()*image.height()*scale);
+            // Break a guide at failed projections and remote points, rather than
+            // drawing a spurious connector across a mapping singularity.
+            if(!std::isfinite(point.x())||!std::isfinite(point.y())||std::abs(point.x())>1e6||std::abs(point.y())>1e6){connected=false;continue;}
+            if(connected)guide.lineTo(point);else guide.moveTo(point);connected=true;
+        }
+        p.setPen(QPen(QColor(222,217,237,180),1,Qt::DashLine));p.drawPath(guide);
         p.setPen(QPen(QColor("#ded9ed"),1.5));p.setBrush(QColor("#37313f"));
         for(const auto &uv:gradientHandles){
             if(!std::isfinite(uv.x())||!std::isfinite(uv.y()))continue;

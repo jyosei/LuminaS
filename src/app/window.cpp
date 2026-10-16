@@ -441,7 +441,7 @@ void Window::requestEdit(){
     if(cropSelecting){recipe.crop={0,0,1,1};recipe.angle=0;recipe.flipHorizontal=recipe.flipVertical=false;}
     expected={session,revision,++draft,++token,geometry,false,localIdentity,viewEpoch};
     if(!comparing&&!cropSelecting&&curveEditor->isDragging())expected.interactive=true;
-    if(!comparing&&!cropSelecting&&(brushTransaction.active()||localParameterDraft))expected.interactive=true;
+    if(!comparing&&!cropSelecting&&(brushTransaction.active()||gradientTransaction.active()||localParameterDraft))expected.interactive=true;
     if(!comparing&&!cropSelecting)for(auto *slider:editPanel->findChildren<QSlider *>())if(slider->isSliderDown())expected.interactive=true;
     RenderView view;if(pointRangeActive&&!comparing&&!cropSelecting&&pointColorPanel&&pointColorPanel->selectedIndex()>=0&&pointColorPanel->selectedIndex()<recipe.pointColors.size())view.pointRange=pointColorPanel->selectedIndex();else if(pointRangeActive){pointRangeActive=false;pointColorPanel->setRangeActive(false);}
     // Compare and crop replace the whole frame; the diagnostic mask is not meaningful there.
@@ -492,7 +492,7 @@ void Window::syncCanvasTools(){
     if(auto *hand=findChild<QToolButton *>("tool-hand")){QSignalBlocker block(hand);hand->setChecked(!cropSelecting&&!picking&&!canvas->brushMode());}
     if(auto *crop=findChild<QToolButton *>("tool-crop")){QSignalBlocker block(crop);crop->setChecked(cropSelecting);}
     if(auto *exit=findChild<QPushButton *>("exit-crop"))exit->setVisible(cropSelecting);
-    if(auto *hint=findChild<QLabel *>("navigation-hint"))hint->setText(cropSelecting?QStringLiteral("拖选后应用裁剪，Esc退出"):picking?QStringLiteral("点击照片取样，Esc取消"):canvas->brushMode()?QStringLiteral("笔刷涂抹 · Alt 擦除 · Space 平移"):QStringLiteral("滚轮缩放 · 小手拖动"));
+    if(auto *hint=findChild<QLabel *>("navigation-hint"))hint->setText(cropSelecting?QStringLiteral("拖选后应用裁剪，Esc退出"):picking?QStringLiteral("点击照片取样，Esc取消"):canvas->brushMode()?(localGradientKind?QStringLiteral("拖动渐变或控制点 · Alt 减去 · Space 平移"):QStringLiteral("笔刷涂抹 · Alt 擦除 · Space 平移")):QStringLiteral("滚轮缩放 · 小手拖动"));
 }
 bool Window::autoWhiteBalance(QString &error){
     if(!neutralPickerAvailable()){error=pickerHint->text();return false;}

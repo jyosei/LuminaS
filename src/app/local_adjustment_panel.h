@@ -50,6 +50,7 @@ public:
     // document and never clears a stored selection.
     void setAvailable(bool available);
     void setBrushActive(bool active);
+    void setGradientMode(bool enabled); // hide brush-only radius/hardness rows
     bool brushActive() const;
     QString selectedLayerId() const;
     LocalEdit::BrushSettings brushSettings() const;
@@ -158,6 +159,7 @@ private:
     bool m_movingRows=false;       // a reported order is being applied row by row
     bool m_blockReorder=false;     // one guard for the whole reorder loop
     bool m_brushActive=false;
+    bool m_gradientMode=false;
     QStringList m_pendingOrderIds; // ids captured inside rowsMoved, emitted later
     LocalEdit::BrushSettings m_brush;
 

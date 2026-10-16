@@ -10,6 +10,7 @@ namespace LocalEdit {struct LayerChange;}
 #include "edit_loader.h"
 #include "core/commands.h"
 #include "local_brush_transaction.h"
+#include "local_gradient_transaction.h"
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include "preview_histogram.h"
@@ -26,6 +27,7 @@ class QFormLayout;
 class QDockWidget;
 class QTabWidget;
 class LocalAdjustmentPanel;
+class LocalGradientControls;
 
 enum class Pick { Unmarked, Keep, Reject };
 struct Photo { QString path; Pick pick = Pick::Unmarked; QListWidgetItem *item = nullptr; QString sha256; int cacheState=0;};
@@ -67,6 +69,9 @@ private:
     void setupLocalEditing(QDockWidget *dock);
     void refreshLocalPanel();
     void syncLocalTool();
+    void setLocalGradientTool(int kind);
+    void selectLocalComponent(const QString &id);
+    void syncLocalGradientHandles();
     bool localEditingAvailable() const;
     void bindLocalAsset(const EditResult &result);
     void createLocalBrushLayer();
@@ -78,10 +83,14 @@ private:
     void finishLocalEdits(bool canceled=false);
     bool cancelLocalEdits();
     LocalAdjustmentPanel *localPanel=nullptr;
+    LocalGradientControls *localGradients=nullptr;
     QTabWidget *adjustmentScope=nullptr;
     QString selectedLocalLayer;
+    QString selectedLocalComponent,localAssetId,gradientPreviousComponent;
+    int localGradientKind=0;
     bool localSourceReady=false,localFinishing=false,localToolSync=false;
     LocalEdit::BrushTransaction brushTransaction;
+    LocalEdit::GradientTransaction gradientTransaction;
     LocalEdit::DocumentSnapshot localParameterBase,localParameterDraft;
     bool localOpacityDraft=false;
     QString localDraftLayer;

@@ -70,11 +70,11 @@ void LocalAdjustmentPanel::buildUi(){
     m_list->installEventFilter(this); // never filter the inline text editor
     layout->addWidget(m_list);
 
-    m_new=new QPushButton(tr("新建笔刷层"),this);
+    m_new=new QPushButton(tr("新建局部层"),this);
     m_new->setObjectName(QStringLiteral("local-new-brush"));
     m_new->setCheckable(false);
     m_new->setToolTip(tr("新建一个笔刷局部层"));
-    m_new->setAccessibleName(tr("新建笔刷层"));
+    m_new->setAccessibleName(tr("新建局部层"));
     // The new button and its compact layer menu share one row.
     QHBoxLayout *createRow=new QHBoxLayout;
     {
@@ -196,6 +196,7 @@ void LocalAdjustmentPanel::buildUi(){
     layout->addWidget(m_parameters);
 
     m_brushBox=new QWidget(this);
+    m_brushBox->setObjectName("local-brush-settings");
     QFormLayout *brushForm=new QFormLayout(m_brushBox);
     brushForm->setContentsMargins(0,0,0,0);
     brushForm->setSpacing(4);
@@ -288,7 +289,7 @@ void LocalAdjustmentPanel::buildUi(){
     footer->setAccessibleName(tr("快捷键"));
     layout->addWidget(footer);
 
-    m_hintEmpty=tr("新建局部层后涂抹；全图基础固定在底部");
+    m_hintEmpty=tr("新建局部层后使用笔刷或渐变；全图基础固定在底部");
     m_hintWaiting=tr("等待照片预览完成");
 
     connect(m_list,&QListWidget::currentRowChanged,this,&LocalAdjustmentPanel::handleSelectionChanged);
@@ -616,6 +617,16 @@ void LocalAdjustmentPanel::setAvailable(bool available){
     m_available=available;
     refreshControls();
 }
+void LocalAdjustmentPanel::setGradientMode(bool enabled){
+    m_gradientMode=enabled;
+    auto *form=qobject_cast<QFormLayout *>(m_brushBox->layout());
+    if(!form)return;
+    form->setRowVisible(0,!enabled);form->setRowVisible(1,!enabled);
+    m_strengthSpin->setToolTip(enabled?tr("新渐变组成项强度"):tr("笔刷强度"));
+    if(auto *footer=findChild<QLabel *>("local-shortcuts"))footer->setText(enabled?
+        tr("拖动创建 · 控制点调整 · Alt 减去 · Space 平移 · O 覆盖"):
+        tr("Alt 临时擦除 · Space 平移 · [ ] 大小 · O 覆盖"));
+}
 
 void LocalAdjustmentPanel::setBrushActive(bool active){
     if(m_brushActive==active)return;
@@ -909,7 +920,7 @@ void LocalAdjustmentPanel::handleBrushToggled(bool checked){
 
 void LocalAdjustmentPanel::handleEraseToggled(bool checked){
     if(m_restoring)return;
-    if(checked&&!m_brushActive){
+    if(checked&&!m_brushActive&&!m_gradientMode){
         setBrushActive(true);
         emit brushToolToggled(true);
     }

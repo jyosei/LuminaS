@@ -54,7 +54,9 @@ private slots:
         const double nan=std::numeric_limits<double>::quiet_NaN();
         canvas.setGradientHandles({QPointF(.5,.5),QPointF(-.015,.5),QPointF(nan,nan)});
         canvas.repaint();QCoreApplication::processEvents();const int baseline=painted.count();
-        canvas.setGradientHandles({QPointF(.5,.5),QPointF(-.015,.5)});canvas.repaint();QCoreApplication::processEvents();
+        canvas.setGradientHandles({QPointF(.5,.5),QPointF(-.015,.5)});
+        canvas.setGradientGuide({QPointF(.2,.2),QPointF(.7,.8),QPointF(nan,nan),QPointF(.8,.2),QPointF(.2,.8)});
+        canvas.repaint();QCoreApplication::processEvents();
         QCOMPARE(painted.count(),baseline);
         QSignalSpy pressed(&canvas,&Canvas::brushPressed),finished(&canvas,&Canvas::brushFinished);
         const auto centre=widgetAt(fit,.5,.5);

@@ -26,6 +26,7 @@ public:
     // The host owns source geometry. Hit radius is fixed in widget DIP.
     void setGradientMode(bool enabled);
     void setGradientHandles(QVector<QPointF> handles);
+    void setGradientGuide(QVector<QPointF> points); // NaN separates projected segments
     int pressedGradientHandle() const { return gradientHandle; }
     bool brushMode() const { return brushActive; }
     bool brushGestureActive() const { return brushGesture; }
@@ -92,6 +93,7 @@ private:
     bool gradientMode=false;
     int gradientHandle=-1;
     QVector<QPointF> gradientHandles;
+    QVector<QPointF> gradientGuide;
     bool brushGesture=false;     // a stroke is currently open
     bool brushSubtract=false;    // Alt intent frozen at press time
     bool spaceHeld=false;        // temporary hand pan modifier held

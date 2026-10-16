@@ -92,6 +92,17 @@ double valueOf(const LocalParameters &parameters,const QString &key){
 class LocalAdjustmentPanelTests : public QObject {
     Q_OBJECT
 private slots:
+    void gradientModeKeepsStrengthAndSubtractWithoutArmingBrush(){
+        LocalAdjustmentPanel panel;panel.setDocument(snapshotOf({layer("a","Local")}));panel.setAvailable(true);panel.show();QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        QSignalSpy tool(&panel,&LocalAdjustmentPanel::brushToolToggled),settings(&panel,&LocalAdjustmentPanel::brushSettingsChanged);
+        panel.setGradientMode(true);
+        QVERIFY(!panel.findChild<QDoubleSpinBox *>("local-radius")->isVisible());QVERIFY(!panel.findChild<QDoubleSpinBox *>("local-hardness")->isVisible());
+        QVERIFY(panel.findChild<QDoubleSpinBox *>("local-strength")->isVisible());
+        QVERIFY(!panel.findChild<QLabel *>("local-shortcuts")->text().contains(QStringLiteral("[ ]")));
+        panel.findChild<QPushButton *>("local-erase")->click();QCOMPARE(tool.count(),0);QCOMPARE(settings.count(),1);QVERIFY(panel.brushSettings().subtract);QVERIFY(!panel.brushActive());
+        panel.setGradientMode(false);QVERIFY(panel.findChild<QDoubleSpinBox *>("local-radius")->isVisible());QVERIFY(panel.findChild<QDoubleSpinBox *>("local-hardness")->isVisible());
+        QCOMPARE(tool.count(),0);QCOMPARE(settings.count(),1);
+    }
     void layerOpacityNormalizationMenusAndLimits(){
         LocalAdjustmentPanel panel;panel.setAvailable(true);
         auto a=layer("a","Lower"),b=layer("b","Upper");b.opacity=.625;
@@ -384,7 +395,7 @@ void LocalAdjustmentPanelTests::availabilityGatesControlsAndShowsWaitingHint(){
     QVERIFY(!visible->isEnabled());
     QVERIFY(!exposure->isEnabled());
     QVERIFY(!hint->isHidden()); // the empty-document hint is shown
-    QCOMPARE(hint->text(),QStringLiteral("新建局部层后涂抹；全图基础固定在底部"));
+    QCOMPARE(hint->text(),QStringLiteral("新建局部层后使用笔刷或渐变；全图基础固定在底部"));
 
     // Availability false disables every tool and parameter control again.
     panel.setAvailable(false);
