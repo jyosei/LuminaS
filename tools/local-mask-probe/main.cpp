@@ -27,6 +27,7 @@
 #include "render/local_reference.h"
 #include "render/local_mask.h"
 #include "render/local_renderer.h"
+#include "render/local_preview_cache.h"
 #include "render/geometry_transform.h"
 
 using namespace LocalEdit;
@@ -232,6 +233,22 @@ int main(int argc,char **argv){
         if(!effectHash.isEmpty()&&effectHash!=hash){qCritical("unstable effect output");return 1;}
         effectHash=hash;
     }
+    LocalPreviewCache cache;
+    QJsonArray cachedEffectMs;double cachedColdMs=0;
+    for(int round=0;round<4;++round){
+        document.layers[0].parameters.exposure=.5+.1*round;
+        document.layers[0].version++;document.revision++;document.localIdentity++;
+        timer.restart();const auto rendered=renderDocumentPreview(source,document,document.global,
+            3840,nullptr,{}, {},&cache);
+        const double elapsed=timer.nsecsElapsed()/1e6;
+        if(rendered.image.isNull()){qCritical().noquote()<<rendered.error;return 1;}
+        if(round==0)cachedColdMs=elapsed;else cachedEffectMs.append(elapsed);
+        const auto referenceEffect=renderDocumentPreview(source,document,document.global);
+        if(referenceEffect.image.isNull()||rendered.image!=referenceEffect.image){
+            qCritical("cached effect disagrees with uncached effect");return 1;
+        }
+    }
+    const auto cacheStats=cache.stats();
     QJsonArray warmupArrayJson;
     QJsonArray measuredArray;
     for(qint64 value:warmupMs)warmupArrayJson.append(static_cast<double>(value));
@@ -249,6 +266,11 @@ int main(int argc,char **argv){
         {QStringLiteral("warmupMs"),warmupArrayJson},
         {QStringLiteral("measuredMs"),measuredArray},
         {QStringLiteral("syntheticRgbEffectMs"),effectMs},
+        {QStringLiteral("cachedColdRgbEffectMs"),cachedColdMs},
+        {QStringLiteral("cachedParameterDragRgbEffectMs"),cachedEffectMs},
+        {QStringLiteral("cacheBuilds"),double(cacheStats.builds)},
+        {QStringLiteral("cacheHits"),double(cacheStats.hits)},
+        {QStringLiteral("cacheRetainedBytes"),double(cacheStats.retainedBytes)},
         {QStringLiteral("syntheticRgbEffectSha256"),effectHash},
         {QStringLiteral("effectMeaning"),QStringLiteral("global+local+sRGB; no native painting, no cache")},
         {QStringLiteral("mappingAccumulatedMs"),mappingTimes},

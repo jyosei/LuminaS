@@ -5,6 +5,8 @@
 #include "core/point_color_sampling.h"
 #include "io/source_reader.h"
 #include "render/cpu_renderer.h"
+#include "render/local_renderer.h"
+#include "render/local_preview_cache.h"
 #include <QtConcurrentRun>
 #include <QFileInfo>
 #include <QElapsedTimer>
@@ -36,7 +38,7 @@ static bool draftRawBalance(const SourceFrame &source,double warmth,double tint,
 bool EditLoader::acceptsResult(const EditResult &result) const{
     return !closing&&hasCurrentRequest&&result.path==latestPath&&result.view==latestView&&acceptsEditTag(result.tag,latest);
 }
-EditLoader::EditLoader(QObject *parent):QObject(parent){
+EditLoader::EditLoader(QObject *parent):QObject(parent),localPreviewCache(std::make_unique<LocalEdit::LocalPreviewCache>()){
     pool.setMaxThreadCount(1);pointSamplePool.setMaxThreadCount(1);livePool.setMaxThreadCount(1);
     prefetchPool.setMaxThreadCount(1);prefetchPool.setThreadPriority(QThread::LowestPriority);
     connect(&pointSampleWatcher,&QFutureWatcher<PointSampleResult>::finished,this,[this]{
@@ -82,6 +84,7 @@ void EditLoader::invalidate(){
     // Close the identity gate first. Tokens only request cooperative termination.
     hasCurrentRequest=false;latestPath.clear();pending.reset();livePending.reset();
     currentCancel.cancel();liveCancel.cancel();cancelPointColorSample();
+    localPreviewCache->clear();
     lastBase={};lastFullGeometry.reset();
 }
 EditLoader::~EditLoader(){
@@ -110,10 +113,27 @@ bool EditLoader::requestPointColorSample(const QString &path,const Recipe &recip
 }
 bool EditLoader::canSamplePointColor(const QString &path,const Recipe &recipe,EditTag tag) const{return !pointSampleBusy&&recipe==latestRecipe&&canPickNeutral(path,recipe,tag);}
 void EditLoader::request(const QString &path,const Recipe &recipe,EditTag tag,const RenderView &view){
+    queueRequest(path,recipe,tag,view,{});
+}
+bool EditLoader::requestDocument(const QString &path,LocalEdit::DocumentSnapshot document,EditTag tag,
+    QString &error,const RenderView &view){
+    error.clear();
+    if(!document||!LocalEdit::validDocument(*document,error,true)){
+        if(error.isEmpty())error="Missing local document";return false;
+    }
+    if(document->asset.sourcePath!=path){error="Document source path mismatch";return false;}
+    if(closing){error="Loader closing";return false;}
+    // Do not trust a const shared_ptr to exclude aliases retained by its caller.
+    auto frozen=std::make_shared<const LocalEdit::PhotoDocument>(*document);
+    const auto recipe=frozen->global;
+    queueRequest(path,recipe,tag,view,std::move(frozen));return true;
+}
+void EditLoader::queueRequest(const QString &path,const Recipe &recipe,EditTag tag,const RenderView &view,
+    LocalEdit::DocumentSnapshot document){
     if(closing)return;
     // Invalidate old delivery before requesting cancellation; never revoke its buffers.
     latest=tag;latestPath=path;latestRecipe=recipe;latestView=view;hasCurrentRequest=true;
-    pending.reset();livePending.reset();Request next{path,recipe,tag};next.view=view;
+    pending.reset();livePending.reset();Request next{path,recipe,tag};next.view=view;next.document=std::move(document);
     if(currentRequest&&!compatible(*currentRequest,next))currentCancel.cancel();
     if(liveRequest&&!compatible(*liveRequest,next))liveCancel.cancel();
     const QFileInfo liveInfo(path);
@@ -216,7 +236,10 @@ EditResult EditLoader::process(const Request &request){
         }
         auto previewSource=proxy;auto applied=request.recipe;clearPreparedGeometry(applied);
         if(raw&&(warmth!=proxy.rawWarmth||tint!=proxy.rawTint)&&!draftRawBalance(proxy,warmth,tint,previewSource)){result.error="RAW draft matrix";return result;}
-        const auto rendered=renderFrame(previewSource,applied,0,&spatialCache,request.view,request.cancel);result.error=rendered.error;result.image=rendered.image;
+        const auto rendered=request.document?
+            LocalEdit::renderDocumentPreview(previewSource,*request.document,applied,3840,&spatialCache,request.view,request.cancel,localPreviewCache.get()):
+            renderFrame(previewSource,applied,0,&spatialCache,request.view,request.cancel);
+        result.document=request.document;result.error=rendered.error;result.image=rendered.image;
         if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
         result.originalSize=proxy.originalSize;result.fullSize=renderedSize(proxy.originalSize,request.recipe);result.colorNote=proxy.colorNote;result.sourceHash=proxy.sha256;
         if(raw&&request.tag.interactive&&(warmth!=proxy.rawWarmth||tint!=proxy.rawTint))result.colorNote+=QStringLiteral(" · WB拖动缓存反馈，松手源精算");
@@ -242,7 +265,10 @@ EditResult EditLoader::processLive(const Request &request){
     }
     auto applied=request.recipe;clearPreparedGeometry(applied);
     if(base.raw&&!draftRawBalance(base,request.recipe.warmth,request.recipe.tint,base)){result.error="RAW live matrix";return result;}
-    const auto rendered=renderFrame(base,applied,0,&spatialCache,request.view,request.cancel);result.image=rendered.image;result.error=rendered.error;
+    const auto rendered=request.document?
+        LocalEdit::renderDocumentPreview(base,*request.document,applied,3840,&spatialCache,request.view,request.cancel,localPreviewCache.get()):
+        renderFrame(base,applied,0,&spatialCache,request.view,request.cancel);
+    result.document=request.document;result.image=rendered.image;result.error=rendered.error;
     if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
     result.sourceHash=base.sha256;result.originalSize=base.originalSize;
     result.fullSize=renderedSize(base.originalSize,request.recipe);result.colorNote=base.colorNote+QStringLiteral(" · 4K缓存实时反馈");result.sourceBytes=request.baseBytes;result.sourceMtime=request.baseMtime;result.elapsedMs=double(timer.elapsed());return result;

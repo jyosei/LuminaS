@@ -7,6 +7,7 @@
 #include "render/vignette_operator.h"
 #include "render/grain_operator.h"
 #include "render/geometry_transform.h"
+#include "render/local_preview_cache.h"
 
 using namespace LocalEdit;
 namespace {
@@ -108,6 +109,36 @@ private slots:
             QVERIFY2(std::abs(a-b)<=2e-6f+2e-6f*std::abs(a),"prepared mask/RGB mapping drift");
         }
         QVERIFY(renderDocumentFullLinear(prepared,doc,error).isNull());
+    }
+    void cacheKeysReuseAndInvalidateActualPixels(){
+        auto frame=source();auto doc=document(frame);auto adjustment=layer("cached");
+        adjustment.parameters.exposure=.6;doc.layers={adjustment};
+        LocalPreviewCache cache;QString error;
+        auto render=[&]{return renderDocumentPreviewLinear(frame,doc,doc.global,3840,error,{},&cache);};
+        auto first=render();QVERIFY2(!first.isNull(),qPrintable(error));QCOMPARE(cache.stats().builds,quint64(2));
+        QVERIFY(exact(first,renderDocumentFullLinear(frame,doc,error)));
+        doc.layers[0].parameters.exposure=1;doc.layers[0].version++;doc.revision++;doc.localIdentity++;
+        const auto changed=render();QVERIFY2(!changed.isNull(),qPrintable(error));QVERIFY(!exact(first,changed));
+        QCOMPARE(cache.stats().builds,quint64(2)); // both base and mask reused
+        QVERIFY(exact(changed,renderDocumentFullLinear(frame,doc,error)));
+        doc.global.exposure=.3;const auto global=render();QVERIFY2(!global.isNull(),qPrintable(error));
+        QCOMPARE(cache.stats().builds,quint64(3)); // mask independent of global colour
+        QVERIFY(exact(global,renderDocumentFullLinear(frame,doc,error)));
+        doc.layers[0].mask.version++;doc.layers[0].mask.components[0].strength=.2;
+        const auto remasked=render();QVERIFY2(!remasked.isNull(),qPrintable(error));
+        QCOMPARE(cache.stats().builds,quint64(4));QVERIFY(!exact(global,remasked));
+        doc.global.grainAmount=.1;doc.global.vignetteAmount=-.4;
+        const auto post=render();QVERIFY2(!post.isNull(),qPrintable(error));
+        QCOMPARE(cache.stats().builds,quint64(4)); // post-local style does not rebuild prefix/mask
+        QVERIFY(exact(post,renderDocumentFullLinear(frame,doc,error)));
+        doc.global.crop={.1,.1,.8,.8};doc.global.angle=8;doc.global.flipHorizontal=true;
+        const auto geometry=render();QVERIFY2(!geometry.isNull(),qPrintable(error));
+        QCOMPARE(cache.stats().builds,quint64(6));QVERIFY(exact(geometry,renderDocumentFullLinear(frame,doc,error)));
+        reinterpret_cast<float *>(frame.linear.scanLine(4))[6*4]=.7f;
+        const auto newFrame=render();QVERIFY2(!newFrame.isNull(),qPrintable(error));
+        QCOMPARE(cache.stats().builds,quint64(8));QVERIFY(exact(newFrame,renderDocumentFullLinear(frame,doc,error)));
+        cache.clear();QVERIFY(exact(newFrame,render()));QCOMPARE(cache.stats().builds,quint64(10));
+        QVERIFY(cache.stats().retainedBytes<=256*1024*1024);
     }
     void rejectsWrongSourceAndCancellation(){
         auto frame=source();const auto doc=document(frame);QString error;

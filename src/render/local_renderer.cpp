@@ -1,10 +1,15 @@
 #include "local_renderer.h"
 #include "local_mask.h"
+#include "local_preview_cache.h"
 #include "vignette_operator.h"
 #include "grain_operator.h"
 #include "color/color_pipeline.h"
 #include "geometry_transform.h"
 #include <QElapsedTimer>
+#include <QDataStream>
+#include <QIODevice>
+#include <QCryptographicHash>
+#include <QJsonDocument>
 #include <QThreadPool>
 #include <QtConcurrentRun>
 #include <array>
@@ -21,6 +26,45 @@ bool hasActive(const PhotoDocument &document){
     for(const auto &layer:document.layers)if(active(layer))return true;
     return false;
 }
+QByteArray sourceKey(const SourceFrame &source){
+    QByteArray data;QDataStream stream(&data,QIODevice::WriteOnly);
+    stream<<quint32(1)<<quint32(localAlgorithmVersion)<<source.sha256<<source.linear.cacheKey()
+        <<source.linear.size()<<source.originalSize;
+    return data;
+}
+QByteArray baseKey(const SourceFrame &source,const Recipe &prefix,int longEdge){
+    QByteArray data=sourceKey(source);QDataStream stream(&data,QIODevice::Append);
+    stream<<QByteArray("global-linear")<<longEdge<<source.raw<<source.rawWarmth<<source.rawTint
+        <<source.pixelScaleX()<<source.pixelScaleY();
+    for(float value:source.draftBalance)stream<<value;
+    for(float value:source.cameraToWork)stream<<value;
+    for(double value:source.cameraWB)stream<<value;
+    stream<<QJsonDocument(recipeJson(prefix)).toJson(QJsonDocument::Compact);
+    return QCryptographicHash::hash(data,QCryptographicHash::Sha256);
+}
+QByteArray maskKey(const SourceFrame &source,const PhotoDocument &document,
+    const AdjustmentLayer &layer,QSize size,QString &error){
+    auto keyDocument=document;
+    keyDocument.revision=1;keyDocument.localIdentity=0;
+    keyDocument.global=preparedGeometry(document.global);
+    keyDocument.global.flipHorizontal=document.global.flipHorizontal;
+    keyDocument.global.flipVertical=document.global.flipVertical;
+    auto keyLayer=layer;keyLayer.parameters={};keyLayer.name.clear();keyLayer.version=1;
+    keyLayer.opacity=1;keyLayer.enabled=true;keyDocument.layers={keyLayer};
+    const auto json=documentJson(keyDocument,error);if(!error.isEmpty())return {};
+    QByteArray data=sourceKey(source);QDataStream stream(&data,QIODevice::Append);
+    stream<<QByteArray("brush-mask")<<size<<QJsonDocument(json).toJson(QJsonDocument::Compact);
+    return QCryptographicHash::hash(data,QCryptographicHash::Sha256);
+}
+LocalPreviewCache::Ptr cachedBuild(LocalPreviewCache &cache,const QByteArray &key,
+    const LocalPreviewCache::Builder &build,QString &error,const CancellationToken &cancel){
+    auto result=cache.getOrBuild(key,build,error,cancel);
+    // A different request may own a joined build and cancel it. Our live
+    // request can make one fresh attempt after that failed entry is removed.
+    if(!result&&!isCanceled(cancel)&&error==QStringLiteral("Canceled"))
+        result=cache.getOrBuild(key,build,error,cancel);
+    return result;
+}
 bool check(const SourceFrame &source,const PhotoDocument &document,QString &error,
     const CancellationToken &cancel){
     error.clear();if(isCanceled(cancel)){error="Canceled";return false;}
@@ -35,7 +79,7 @@ bool check(const SourceFrame &source,const PhotoDocument &document,QString &erro
 // Takes the sole frame owner. No second full-source float frame or full-source
 // coverage buffer is allocated; each worker owns at most one 256px tile.
 QImage compose(QImage image,const SourceFrame &source,const PhotoDocument &document,
-    const Recipe &processingRecipe,QString &error,const CancellationToken &cancel){
+    const Recipe &processingRecipe,QString &error,const CancellationToken &cancel,LocalPreviewCache *cache){
     if(image.isNull())return {};
     constexpr int tileSize=256;
     const auto size=image.size();const int columns=(size.width()+tileSize-1)/tileSize;
@@ -51,6 +95,16 @@ QImage compose(QImage image,const SourceFrame &source,const PhotoDocument &docum
         if(!mask.valid()||!transform.valid()){
             error=mask.valid()?QStringLiteral("Invalid local parameters"):mask.error();return {};
         }
+        LocalPreviewCache::Ptr maskPayload;
+        if(cache){
+            const auto key=maskKey(source,document,layer,size,error);if(key.isEmpty())return {};
+            maskPayload=cachedBuild(*cache,key,[&](QString &problem)->LocalPreviewCache::Ptr {
+                LocalPreviewPayload value;
+                if(!rasterizeMaskPreview(mask,mapping,image,value.coverage,problem,cancel))return {};
+                return std::make_shared<const LocalPreviewPayload>(std::move(value));
+            },error,cancel);
+            if(!maskPayload)return {};
+        }
         std::atomic<bool> failed{false};std::array<QString,4> errors;
         std::array<QFuture<void>,4> jobs;
         for(int worker=0;worker<workers;++worker)jobs[worker]=QtConcurrent::run(&pool,[&,worker]{
@@ -61,14 +115,16 @@ QImage compose(QImage image,const SourceFrame &source,const PhotoDocument &docum
                 const QRect rect(x,y,std::min(tileSize,size.width()-x),std::min(tileSize,size.height()-y));
                 // alpha is immutable during all layers. Concurrent RGB writes
                 // use the pre-detached pointer, never non-const QImage access.
-                if(!mask.rasterize(mapping,image,rect,coverage,errors[worker],cancel,&scratch)){
+                if(!maskPayload&&!mask.rasterize(mapping,image,rect,coverage,errors[worker],cancel,&scratch)){
                     failed.store(true,std::memory_order_relaxed);break;
                 }
                 for(int row=0;row<rect.height();++row){
                     if(isCanceled(cancel))break;
                     auto *destination=reinterpret_cast<float *>(pixels+(y+row)*stride)+4*x;
                     for(int col=0;col<rect.width();++col){
-                        const float weight=coverage[qsizetype(row)*rect.width()+col];
+                        const float weight=maskPayload?
+                            maskPayload->coverage[qsizetype(y+row)*size.width()+x+col]:
+                            coverage[qsizetype(row)*rect.width()+col];
                         if(weight>0&&!transform.apply(destination+4*col,weight,float(layer.opacity))){
                             errors[worker]="Nonfinite local render";failed.store(true,std::memory_order_relaxed);return;
                         }
@@ -99,11 +155,21 @@ QImage compose(QImage image,const SourceFrame &source,const PhotoDocument &docum
     return image;
 }
 QImage linear(const SourceFrame &source,const PhotoDocument &document,const Recipe &recipe,
-    int longEdge,QString &error,const CancellationToken &cancel){
+    int longEdge,QString &error,const CancellationToken &cancel,LocalPreviewCache *cache=nullptr){
     if(!hasActive(document))return renderLinear(source,recipe,longEdge,error,{},cancel);
     auto prefix=recipe;prefix.vignetteAmount=prefix.grainAmount=0;
-    auto image=renderLinear(source,prefix,longEdge,error,{},cancel);
-    return compose(std::move(image),source,document,recipe,error,cancel);
+    prefix.vignetteMidpoint=prefix.vignetteFeather=.5;prefix.grainSize=3;prefix.grainRoughness=.5;
+    LocalPreviewCache::Ptr base;
+    QImage image;
+    if(cache){
+        base=cachedBuild(*cache,baseKey(source,prefix,longEdge),[&](QString &problem)->LocalPreviewCache::Ptr {
+            LocalPreviewPayload value;value.pixels=renderLinear(source,prefix,longEdge,problem,{},cancel);
+            if(value.pixels.isNull())return {};
+            return std::make_shared<const LocalPreviewPayload>(std::move(value));
+        },error,cancel);
+        if(!base)return {};image=base->pixels;
+    }else image=renderLinear(source,prefix,longEdge,error,{},cancel);
+    return compose(std::move(image),source,document,recipe,error,cancel,cache);
 }
 bool previewRecipe(const PhotoDocument &document,const Recipe &recipe,QString &error){
     auto prepared=document.global;clearPreparedGeometry(prepared);
@@ -114,14 +180,15 @@ bool previewRecipe(const PhotoDocument &document,const Recipe &recipe,QString &e
 }
 }
 QImage renderDocumentPreviewLinear(const SourceFrame &source,const PhotoDocument &document,
-    const Recipe &recipe,int longEdge,QString &error,const CancellationToken &cancel){
+    const Recipe &recipe,int longEdge,QString &error,const CancellationToken &cancel,LocalPreviewCache *cache){
     if(!check(source,document,error,cancel))return {};
     if(!previewRecipe(document,recipe,error))return {};
     if(longEdge<=0||longEdge>3840){error="Preview long edge must be 1..3840";return {};}
-    return linear(source,document,recipe,longEdge,error,cancel);
+    return linear(source,document,recipe,longEdge,error,cancel,cache);
 }
 RenderResult renderDocumentPreview(const SourceFrame &source,const PhotoDocument &document,
-    const Recipe &recipe,int longEdge,SpatialCache *cache,const RenderView &view,const CancellationToken &cancel){
+    const Recipe &recipe,int longEdge,SpatialCache *cache,const RenderView &view,const CancellationToken &cancel,
+    LocalPreviewCache *localCache){
     RenderResult result;QElapsedTimer timer;timer.start();
     if(!check(source,document,result.error,cancel))return result;
     result.fullSize=renderedSize(document.asset.normalizedSize,document.global);
@@ -135,7 +202,7 @@ RenderResult renderDocumentPreview(const SourceFrame &source,const PhotoDocument
         auto legacy=renderFrame(source,recipe,longEdge,cache,view,cancel);
         legacy.fullSize=result.fullSize;return legacy;
     }
-    auto image=linear(source,document,recipe,longEdge,result.error,cancel);
+    auto image=linear(source,document,recipe,longEdge,result.error,cancel,localCache);
     if(!image.isNull())result.image=workToSrgb(image,result.error,cancel);
     result.elapsedMs=timer.nsecsElapsed()/1e6;return result;
 }
