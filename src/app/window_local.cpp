@@ -1,5 +1,6 @@
 #include "window.h"
 #include "local_adjustment_panel.h"
+#include "core/local_layer_operations.h"
 #include "parameter_wheel_guard.h"
 #include <QAction>
 #include <QApplication>
@@ -13,6 +14,7 @@
 #include <QTabWidget>
 #include <QToolButton>
 #include <QUuid>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -62,19 +64,29 @@ void Window::setupLocalEditing(QDockWidget *dock){
         finishLocalEdits();selectedLocalLayer=id;refreshLocalPanel();requestEdit();
     });
     connect(localPanel,&LocalAdjustmentPanel::layerVisibilityChanged,this,[this](const QString &id,bool visible){
-        finishLocalEdits();const auto base=currentPhotoDocument();if(!base)return;
-        auto next=*base;for(auto &layer:next.layers)if(layer.id==id){
-            if(layer.enabled==visible)return;
-            if(layer.version==std::numeric_limits<quint64>::max())return;
-            layer.enabled=visible;++layer.version;break;
-        }
-        const auto path=next.asset.sourcePath;
-        QString error;if(history.commitSnapshot(path,std::make_shared<const LocalEdit::PhotoDocument>(std::move(next)),QStringLiteral("局部层显隐"),&error)){++revision;++localIdentity;}
-        else if(!error.isEmpty())statusBar()->showMessage(error,6000);
-        refreshLocalPanel();requestEdit();
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Visibility;change.layerId=id;change.visible=visible;
+        applyLocalLayerChange(std::move(change),QStringLiteral("局部层显隐"));
     });
+    connect(localPanel,&LocalAdjustmentPanel::layerRenameRequested,this,[this](const QString &id,const QString &name){
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Rename;change.layerId=id;change.name=name;
+        applyLocalLayerChange(std::move(change),QStringLiteral("重命名局部层"));
+    });
+    connect(localPanel,&LocalAdjustmentPanel::layerDuplicateRequested,this,[this](const QString &id){
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Duplicate;change.layerId=id;
+        applyLocalLayerChange(std::move(change),QStringLiteral("复制局部层"));
+    });
+    connect(localPanel,&LocalAdjustmentPanel::layerDeleteRequested,this,[this](const QString &id){
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Remove;change.layerId=id;
+        applyLocalLayerChange(std::move(change),QStringLiteral("删除局部层"));
+    });
+    connect(localPanel,&LocalAdjustmentPanel::layerOrderRequested,this,[this](const QStringList &topToBottom){
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Reorder;change.order=topToBottom;
+        std::reverse(change.order.begin(),change.order.end());applyLocalLayerChange(std::move(change),QStringLiteral("局部层排序"));
+    });
+    connect(localPanel,&LocalAdjustmentPanel::layerOpacityEdited,this,&Window::editLocalOpacity);
+    connect(localPanel,&LocalAdjustmentPanel::layerOpacityFinished,this,[this]{if(localParameterDraft&&localOpacityDraft)finishLocalEdits();});
     connect(localPanel,&LocalAdjustmentPanel::parametersEdited,this,&Window::editLocalParameters);
-    connect(localPanel,&LocalAdjustmentPanel::parametersFinished,this,[this]{finishLocalEdits();});
+    connect(localPanel,&LocalAdjustmentPanel::parametersFinished,this,[this]{if(localParameterDraft&&!localOpacityDraft)finishLocalEdits();});
     connect(localPanel,&LocalAdjustmentPanel::brushToolToggled,this,[this](bool){finishLocalEdits();syncLocalTool();syncCanvasTools();});
     connect(localPanel,&LocalAdjustmentPanel::brushSettingsChanged,this,[this](const LocalEdit::BrushSettings &){finishLocalEdits();syncLocalTool();});
     connect(localPanel,&LocalAdjustmentPanel::overlayToggled,this,[this](bool){requestEdit();});
@@ -128,21 +140,26 @@ void Window::moveLocalBrush(QPointF uv){
 }
 void Window::editLocalParameters(const QString &id,LocalEdit::LocalParameters parameters){
     if(localFinishing)return;
+    if(localParameterBase&&(localOpacityDraft||localDraftLayer!=id))finishLocalEdits();
     if(!localParameterBase){
         endControlEdit();if(!localEditingAvailable())return;
         localParameterBase=currentPhotoDocument();if(!localParameterBase)return;
+        localOpacityDraft=false;localDraftLayer=id;
         ++localIdentity;
     }
+    const auto abandonEmptyDraft=[&]{if(!localParameterDraft){localParameterBase.reset();localOpacityDraft=false;localDraftLayer.clear();}};
     auto next=*localParameterBase;bool found=false;
     for(auto &layer:next.layers)if(layer.id==id){
         if(layer.parameters!=parameters){
-            if(layer.version==std::numeric_limits<quint64>::max())return;
+            if(layer.version==std::numeric_limits<quint64>::max()){
+                abandonEmptyDraft();statusBar()->showMessage(QStringLiteral("局部层版本已达上限"),6000);refreshLocalPanel();return;
+            }
             layer.parameters=parameters;++layer.version;
         }
         found=true;break;
     }
-    if(!found){if(!localParameterDraft)localParameterBase.reset();return;}
-    QString error;if(!LocalEdit::validDocument(next,error,true)){statusBar()->showMessage(error,6000);return;}
+    if(!found){abandonEmptyDraft();refreshLocalPanel();return;}
+    QString error;if(!LocalEdit::validDocument(next,error,true)){abandonEmptyDraft();statusBar()->showMessage(error,6000);refreshLocalPanel();return;}
     if(localParameterDraft&&next==*localParameterDraft)return;
     localParameterDraft=std::make_shared<const LocalEdit::PhotoDocument>(std::move(next));requestEdit();
 }
@@ -162,9 +179,10 @@ void Window::finishLocalEdits(bool canceled){
             if(committed->global!=localParameterBase->global||committed->layers!=localParameterBase->layers)error=QStringLiteral("局部调整基底已变化，未覆盖后续编辑");
             else {auto next=*committed;next.layers=localParameterDraft->layers;candidate=std::make_shared<const LocalEdit::PhotoDocument>(std::move(next));}
         }
-        if(candidate)history.commitSnapshot(photos[current].path,candidate,localParameterDraft?QStringLiteral("局部调整"):QStringLiteral("笔刷"),&error);
+        if(candidate)history.commitSnapshot(photos[current].path,candidate,localParameterDraft?(localOpacityDraft?QStringLiteral("局部层强度"):QStringLiteral("局部调整")):QStringLiteral("笔刷"),&error);
     }else brushTransaction.cancel();
     localParameterBase.reset();localParameterDraft.reset();++revision;++localIdentity;
+    localOpacityDraft=false;localDraftLayer.clear();
     if(!error.isEmpty())statusBar()->showMessage(error,6000);
     refreshLocalPanel();requestEdit();
 }

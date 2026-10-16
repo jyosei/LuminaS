@@ -8,6 +8,7 @@
 #include "app/ui_primitives.h"
 #include <QMetaType>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <QWidget>
 
@@ -16,8 +17,11 @@ class QDoubleSpinBox;
 class QFormLayout;
 class QLabel;
 class QListWidget;
+class QListWidgetItem;
+class QMenu;
 class QPushButton;
 class QSlider;
+class QToolButton;
 
 namespace LocalEdit {
 // Widget-owned brush settings: a plain description of the requested brush, not
@@ -58,6 +62,16 @@ signals:
     void createBrushLayerRequested();
     void selectedLayerChanged(const QString &layerId);
     void layerVisibilityChanged(const QString &layerId,bool visible);
+    // Layer-management intent only: the host owns the document and decides
+    // whether a rename is acceptable, a duplicate is possible or how a new
+    // stacking order is stored. The widget never edits a document itself.
+    void layerRenameRequested(const QString &layerId,const QString &name);
+    void layerDuplicateRequested(const QString &layerId);
+    void layerDeleteRequested(const QString &layerId);
+    // Complete top-to-bottom id order after a real drag (queued, never during drop).
+    void layerOrderRequested(const QStringList &topToBottomIds);
+    void layerOpacityEdited(const QString &layerId,double opacity); // normalized 0..1
+    void layerOpacityFinished();
     void parametersEdited(const QString &layerId,LocalEdit::LocalParameters parameters);
     void parametersFinished();
     void brushSettingsChanged(LocalEdit::BrushSettings settings);
@@ -85,6 +99,7 @@ private:
     struct Layer {
         QString id,name;
         bool enabled=true;
+        double opacity=1;
         LocalEdit::LocalParameters parameters;
     };
 
@@ -97,14 +112,28 @@ private:
     static const FieldSpec *fieldSpecs();      // nine entries, visual order
     static const FieldSpec &specOf(Field field);
     void syncBrushControls();
-    int selectedRow() const;
+    int selectedRow() const;                   // document order (bottom to top)
+    int displayRowOf(const QString &id) const; // list row (top to bottom), -1 when absent
     Layer *selectedLayer();
     const Layer *selectedLayer() const;
     void storeField(Field field,double value); // emits parametersEdited with every field
     double storedField(Field field) const;
     void handleSelectionChanged();
+    void handleItemChanged(QListWidgetItem *item);
     void handleCreate();
     void handleVisibleToggled(bool checked);
+    // Layer-management intent; every one copies id/name before emitting.
+    void handleRenameAction();
+    void handleDuplicateAction();
+    void handleDeleteAction();
+    void handleMoveAction(int delta);          // -1: one step up, +1: one step down
+    void moveSelectedLayer(int delta);
+    void reportOrder(const QStringList &ids);
+    bool handleListKeyPress(QKeyEvent *event);
+    void handleLayerOpacity(double percent);   // slider/spin, live edit
+    void handleLayerOpacityFinished();
+    void syncLayerOpacity();
+    void refreshLayerActions();
     void handleSpinChanged(Field field,double value);
     void handleSliderChanged(Field field,int value);
     void handleSliderReleased(Field field);
@@ -120,15 +149,28 @@ private:
     void handleStrengthChanged(double value);
     bool hasSelection() const;
 
-    QVector<Layer> m_layers; // raw widget-owned copy, authoritative for this widget
+    QVector<Layer> m_layers; // document order: index 0 is the bottom layer
     QString m_selectedId;
     bool m_available=false;
     bool m_restoring=false; // programmatic refresh: suppresses every emitted signal
+    bool m_modelMoveActive=false; // suppress selection callbacks until a drop returns
+    bool m_pendingMove=false;      // a drag already queued its order for the next tick
+    bool m_movingRows=false;       // a reported order is being applied row by row
+    bool m_blockReorder=false;     // one guard for the whole reorder loop
     bool m_brushActive=false;
+    QStringList m_pendingOrderIds; // ids captured inside rowsMoved, emitted later
     LocalEdit::BrushSettings m_brush;
 
     QListWidget *m_list=nullptr;
     QPushButton *m_new=nullptr;
+    QToolButton *m_layerMenu=nullptr;
+    QMenu *m_menu=nullptr;
+    QAction *m_renameAction=nullptr;
+    QAction *m_duplicateAction=nullptr;
+    QAction *m_deleteAction=nullptr;
+    QAction *m_upAction=nullptr;
+    QAction *m_downAction=nullptr;
+    QLabel *m_base=nullptr;    // fixed global base, outside the sortable list
     QPushButton *m_brushButton=nullptr;
     QPushButton *m_erase=nullptr;
     QCheckBox *m_overlay=nullptr;
@@ -136,6 +178,9 @@ private:
     QLabel *m_hint=nullptr;
     QWidget *m_parameters=nullptr;
     QFormLayout *m_parameterForm=nullptr;
+    QWidget *m_opacityBox=nullptr;
+    QDoubleSpinBox *m_opacitySpin=nullptr;
+    QSlider *m_opacitySlider=nullptr;
     QWidget *m_brushBox=nullptr;
     QDoubleSpinBox *m_radiusSpin=nullptr;
     QSlider *m_radiusSlider=nullptr;

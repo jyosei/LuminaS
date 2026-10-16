@@ -1,4 +1,5 @@
 #pragma once
+namespace LocalEdit {struct LayerChange;}
 #include "canvas.h"
 #include "io/jpeg_loader.h"
 #include <QMainWindow>
@@ -69,6 +70,8 @@ private:
     bool localEditingAvailable() const;
     void bindLocalAsset(const EditResult &result);
     void createLocalBrushLayer();
+    void applyLocalLayerChange(LocalEdit::LayerChange change,const QString &name);
+    void editLocalOpacity(const QString &id,double opacity);
     void beginLocalBrush(QPointF uv,bool subtract);
     void moveLocalBrush(QPointF uv);
     void editLocalParameters(const QString &id,LocalEdit::LocalParameters parameters);
@@ -80,6 +83,8 @@ private:
     bool localSourceReady=false,localFinishing=false,localToolSync=false;
     LocalEdit::BrushTransaction brushTransaction;
     LocalEdit::DocumentSnapshot localParameterBase,localParameterDraft;
+    bool localOpacityDraft=false;
+    QString localDraftLayer;
     Export::Queue *exportQueue=nullptr;
     QPointer<ExportDialog> exportDialog;
     void inspectExport(const QString &path,const QString &source);

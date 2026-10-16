@@ -1,14 +1,19 @@
 #include "app/local_adjustment_panel.h"
 #include <QtTest>
 #include <cmath>
+#include <QAbstractItemModel>
+#include <QAction>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSlider>
+#include <QStringList>
+#include <QToolButton>
 
 using namespace LocalEdit;
 
@@ -39,6 +44,17 @@ DocumentSnapshot snapshotOf(const QVector<AdjustmentLayer> &layers){
     auto document=std::make_shared<PhotoDocument>();
     document->layers=layers;
     return document;
+}
+
+// The panel shows the top layer first while the document stores bottom to top,
+// so every expectation reads the shown order from the document order here.
+QStringList shownIds(const QListWidget *list){
+    QStringList ids;
+    for(int row=0;row<list->count();++row)ids.append(list->item(row)->data(Qt::UserRole).toString());
+    return ids;
+}
+int listRowOf(const QListWidget *list,const QString &id){
+    return shownIds(list).indexOf(id);
 }
 
 // The nine local parameters in the panel's documented visual order. The index is
@@ -76,16 +92,72 @@ double valueOf(const LocalParameters &parameters,const QString &key){
 class LocalAdjustmentPanelTests : public QObject {
     Q_OBJECT
 private slots:
+    void layerOpacityNormalizationMenusAndLimits(){
+        LocalAdjustmentPanel panel;panel.setAvailable(true);
+        auto a=layer("a","Lower"),b=layer("b","Upper");b.opacity=.625;
+        QSignalSpy edited(&panel,&LocalAdjustmentPanel::layerOpacityEdited),finished(&panel,&LocalAdjustmentPanel::layerOpacityFinished);
+        QSignalSpy copies(&panel,&LocalAdjustmentPanel::layerDuplicateRequested),deletes(&panel,&LocalAdjustmentPanel::layerDeleteRequested);
+        panel.setDocument(snapshotOf({a,b}),"b");
+        auto *slider=panel.findChild<QSlider *>("slider-local-layer-opacity");auto *spin=panel.findChild<QDoubleSpinBox *>("local-layer-opacity");QVERIFY(slider);QVERIFY(spin);
+        QCOMPARE(slider->value(),625);QCOMPARE(spin->value(),62.5);QCOMPARE(edited.size(),0);
+        slider->setSliderDown(true);slider->setValue(400);slider->setValue(500);QCOMPARE(spin->value(),50.);
+        slider->setSliderDown(false);QCOMPARE(edited.size(),2);QCOMPARE(edited.last()[0].toString(),QString("b"));QCOMPARE(edited.last()[1].toDouble(),.5);QCOMPARE(finished.size(),1);
+        auto *copy=panel.findChild<QAction *>("local-layer-duplicate"),*remove=panel.findChild<QAction *>("local-layer-delete");QVERIFY(copy);QVERIFY(remove);
+        QVERIFY(!panel.findChild<QAction *>("local-layer-up")->isEnabled());QVERIFY(panel.findChild<QAction *>("local-layer-down")->isEnabled());
+        copy->trigger();remove->trigger();QCOMPARE(copies.size(),1);QCOMPARE(deletes.size(),1);QCOMPARE(panel.findChild<QListWidget *>("local-layer-list")->count(),2);
+        b.opacity=.8;panel.setDocument(snapshotOf({a,b}),"b");QCOMPARE(slider->value(),800);QCOMPARE(spin->value(),80.);QCOMPARE(edited.size(),2);
+        QTest::keyClick(slider,Qt::Key_Right);QTRY_COMPARE(finished.size(),2);
+        QCOMPARE(edited.size(),3);QVERIFY(std::abs(edited.last()[1].toDouble()-.801)<1e-12);QCOMPARE(spin->value(),80.1);
+        panel.setAvailable(false);QVERIFY(!slider->isEnabled());QVERIFY(!copy->isEnabled());QVERIFY(!remove->isEnabled());
+        QVector<AdjustmentLayer> many;for(int i=0;i<maximumLayers;++i){auto l=a;l.id=QString::number(i);many.append(l);}
+        panel.setDocument(snapshotOf(many));panel.setAvailable(true);QVERIFY(!copy->isEnabled());QVERIFY(!panel.findChild<QPushButton *>("local-new-brush")->isEnabled());QVERIFY(remove->isEnabled());
+    }
+    void rowRenameVisibilityAndTextDeleteUseStableIds(){
+        QVector<AdjustmentLayer> layers{layer("a","Lower"),layer("b","Upper")};
+        LocalAdjustmentPanel panel;panel.setAvailable(true);
+        panel.setDocument(snapshotOf(layers),"b");panel.show();QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        auto *list=panel.findChild<QListWidget *>("local-layer-list");QVERIFY(list);
+        QSignalSpy rename(&panel,&LocalAdjustmentPanel::layerRenameRequested),visibility(&panel,&LocalAdjustmentPanel::layerVisibilityChanged),deletion(&panel,&LocalAdjustmentPanel::layerDeleteRequested);
+        connect(&panel,&LocalAdjustmentPanel::layerRenameRequested,&panel,[&](const QString &id,const QString &name){for(auto &l:layers)if(l.id==id)l.name=name;panel.setDocument(snapshotOf(layers),"b");});
+        connect(&panel,&LocalAdjustmentPanel::layerVisibilityChanged,&panel,[&](const QString &id,bool value){for(auto &l:layers)if(l.id==id)l.enabled=value;panel.setDocument(snapshotOf(layers),"b");});
+        list->setFocus();QTest::keyClick(list,Qt::Key_F2);auto *editor=list->findChild<QLineEdit *>();QVERIFY(editor);QVERIFY(editor->isVisible());
+        editor->setText(QStringLiteral("O[] 人像"));QTest::keyClick(editor,Qt::Key_Home);QTest::keyClick(editor,Qt::Key_Delete);QCOMPARE(deletion.size(),0);
+        QTest::keyClick(editor,Qt::Key_Return);QTRY_COMPARE(rename.size(),1);QCOMPARE(rename.last()[0].toString(),QString("b"));QCOMPARE(rename.last()[1].toString(),QStringLiteral("[] 人像"));
+        list->item(listRowOf(list,"a"))->setCheckState(Qt::Unchecked);QCOMPARE(visibility.size(),1);QCOMPARE(visibility.last()[0].toString(),QString("a"));QCOMPARE(panel.selectedLayerId(),QString("b"));
+        QTest::qWait(10);list->setFocus();QTest::keyClick(list,Qt::Key_Delete);QCOMPARE(deletion.size(),1);QCOMPARE(deletion.last()[0].toString(),QString("b"));
+    }
+    void realModelMoveSurvivesSameIdRefreshAndRejectsDifferentIds(){
+        LocalAdjustmentPanel panel;panel.setAvailable(true);auto a=layer("a","A"),b=layer("b","B"),c=layer("c","C");
+        panel.setDocument(snapshotOf({a,b,c}),"b");auto *list=panel.findChild<QListWidget *>("local-layer-list");QVERIFY(list);
+        QSignalSpy moved(&panel,&LocalAdjustmentPanel::layerOrderRequested);
+        QVERIFY(list->model()->moveRow({},0,{},3));QCOMPARE(moved.size(),0);
+        b.parameters.exposure=.8;panel.setDocument(snapshotOf({a,b,c}),"b");
+        QTRY_COMPARE(moved.size(),1);QCOMPARE(moved.last()[0].toStringList(),QStringList({"b","a","c"}));QCOMPARE(shownIds(list),QStringList({"b","a","c"}));QCOMPARE(panel.selectedLayerId(),QString("b"));
+        QCOMPARE(panel.findChild<QDoubleSpinBox *>("local-exposure")->value(),.8);
+        QVERIFY(list->model()->moveRow({},0,{},3));panel.setDocument(snapshotOf({layer("x","Different photo")}));
+        QTest::qWait(10);QCOMPARE(moved.size(),1);QCOMPARE(shownIds(list),QStringList({"x"}));
+    }
     void parameterRowsFollowPhotographicOrder(){
         LocalAdjustmentPanel panel;
         auto *spin=panel.findChild<QDoubleSpinBox *>("local-exposure");QVERIFY(spin);
         auto *form=qobject_cast<QFormLayout *>(spin->parentWidget()->layout());QVERIFY(form);
+        // Only the nine compact parameters live in this form; the layer strength
+        // and the brush rows are separate blocks.
+        QCOMPARE(spin->parentWidget()->objectName(),QStringLiteral("local-parameters"));
         const QStringList labels{QStringLiteral("曝光"),QStringLiteral("对比"),QStringLiteral("高光"),QStringLiteral("阴影"),
             QStringLiteral("白色"),QStringLiteral("黑色"),QStringLiteral("暖冷"),QStringLiteral("色调"),QStringLiteral("饱和度")};
         QCOMPARE(form->rowCount(),labels.size());
         for(int i=0;i<labels.size();++i){
             auto *label=qobject_cast<QLabel *>(form->itemAt(i,QFormLayout::LabelRole)->widget());QVERIFY(label);QCOMPARE(label->text(),labels[i]);
         }
+        // The layer strength row carries the same label shape but belongs to its
+        // own block with its own reset-free widgets.
+        auto *opacity=panel.findChild<QDoubleSpinBox *>("local-layer-opacity");QVERIFY(opacity);
+        QCOMPARE(opacity->parentWidget()->objectName(),QString());
+        auto *opacityForm=qobject_cast<QFormLayout *>(opacity->parentWidget()->layout());QVERIFY(opacityForm);
+        QCOMPARE(opacityForm->rowCount(),1);
+        auto *opacityLabel=qobject_cast<QLabel *>(opacityForm->itemAt(0,QFormLayout::LabelRole)->widget());QVERIFY(opacityLabel);
+        QCOMPARE(opacityLabel->text(),QStringLiteral("图层强度"));
     }
     void init(){
         qRegisterMetaType<LocalParameters>("LocalEdit::LocalParameters");
@@ -147,24 +219,34 @@ private slots:
 void LocalAdjustmentPanelTests::populatedTwoLayersAndSelection(){
     LocalAdjustmentPanel panel;
     panel.setAvailable(true);
+    // The document is bottom to top, so "b" is the upper layer.
     panel.setDocument(snapshotOf({layer(QStringLiteral("a"),layerName(0)),
                                   layer(QStringLiteral("b"),layerName(1))}));
     QListWidget *list=panel.findChild<QListWidget *>(QStringLiteral("local-layer-list"));
     QVERIFY(list!=nullptr);
     QCOMPARE(list->count(),2);
-    QCOMPARE(list->item(0)->text(),layerName(0));
-    QCOMPARE(list->item(1)->text(),layerName(1));
-    QCOMPARE(list->item(0)->data(Qt::UserRole).toString(),QStringLiteral("a"));
-    QCOMPARE(list->item(1)->data(Qt::UserRole).toString(),QStringLiteral("b"));
-    // A populated refresh shows the first layer without reporting a selection.
+    QCOMPARE(shownIds(list),QStringList({QStringLiteral("b"),QStringLiteral("a")})); // top first
+    QCOMPARE(list->item(0)->text(),layerName(1));
+    QCOMPARE(list->item(1)->text(),layerName(0));
+    QCOMPARE(list->item(0)->data(Qt::UserRole).toString(),QStringLiteral("b"));
+    QCOMPARE(list->item(1)->data(Qt::UserRole).toString(),QStringLiteral("a"));
+    // A populated refresh shows the bottom layer of the document without
+    // reporting a selection: the fallback is not a user gesture.
     QCOMPARE(panel.selectedLayerId(),QStringLiteral("a"));
-    QCOMPARE(list->currentRow(),0);
+    QCOMPARE(list->currentRow(),listRowOf(list,QStringLiteral("a")));
+    QCOMPARE(list->currentRow(),1);
+
+    // Every row keeps the stable id and the visibility check state of its layer.
+    QCOMPARE(list->item(0)->checkState(),Qt::Checked);
+    QCOMPARE(list->item(1)->checkState(),Qt::Checked);
 
     QSignalSpy changed(&panel,&LocalAdjustmentPanel::selectedLayerChanged);
-    list->setCurrentRow(1);
+    list->setCurrentRow(0); // the upper layer, still addressed by id
     QCOMPARE(changed.count(),1);
     QCOMPARE(changed.first().at(0).toString(),QStringLiteral("b"));
     QCOMPARE(panel.selectedLayerId(),QStringLiteral("b"));
+    // Selecting by row must never be translated into a document index.
+    QCOMPARE(panel.selectedLayerId(),list->item(list->currentRow())->data(Qt::UserRole).toString());
 }
 
 void LocalAdjustmentPanelTests::refreshEmitsNoSignalsAndPreservesParameters(){
@@ -421,10 +503,12 @@ void LocalAdjustmentPanelTests::visibilityToggleReportsStableId(){
     QVERIFY(visible->isChecked());
     QCOMPARE(panel.selectedLayerId(),QStringLiteral("b"));
 
-    // The reported id follows the selection, not the row position.
+    // The reported id follows the clicked row, never a document index.
     QListWidget *list=panel.findChild<QListWidget *>(QStringLiteral("local-layer-list"));
     QVERIFY(list!=nullptr);
-    list->setCurrentRow(0);
+    QCOMPARE(shownIds(list),QStringList({QStringLiteral("b"),QStringLiteral("a")})); // top first
+    list->setCurrentRow(listRowOf(list,QStringLiteral("a")));
+    QCOMPARE(list->currentRow(),1); // the lower layer is the second shown row
     QCOMPARE(panel.selectedLayerId(),QStringLiteral("a"));
     visible->setChecked(false);
     QCOMPARE(changed.count(),2);
