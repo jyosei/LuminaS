@@ -36,7 +36,10 @@ QByteArray sourceKey(const SourceFrame &source){
 QByteArray baseKey(const SourceFrame &source,const Recipe &prefix,int longEdge){
     QByteArray data=sourceKey(source);QDataStream stream(&data,QIODevice::Append);
     stream<<QByteArray("global-linear")<<longEdge<<source.raw<<source.rawWarmth<<source.rawTint
-        <<source.pixelScaleX()<<source.pixelScaleY();
+        // Spatial filters still read the legacy isotropic scale even when the
+        // prepared frame carries explicit X/Y support. These are independent
+        // dependencies; effective axis scales alone cannot identify the base.
+        <<source.sourcePixelsPerPixel<<source.pixelScaleX()<<source.pixelScaleY();
     for(float value:source.draftBalance)stream<<value;
     for(float value:source.cameraToWork)stream<<value;
     for(double value:source.cameraWB)stream<<value;

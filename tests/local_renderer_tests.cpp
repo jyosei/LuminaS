@@ -42,6 +42,66 @@ bool exact(const QImage &a,const QImage &b){
 class LocalRendererTests:public QObject {
     Q_OBJECT
 private slots:
+    void sourceDependencyMatrixMatchesIndependentRender(){
+        using Change=std::function<void(SourceFrame &,PhotoDocument &)>;
+        struct Case {const char *name;Change setup,change;bool changesPixels,newCoverage;};
+        const Change neutral=[](SourceFrame &,PhotoDocument &){};
+        const QVector<Case> cases{
+            {"draft-balance",neutral,[](SourceFrame &s,PhotoDocument &){s.draftBalance[0]=1.1f;},true,false},
+            {"raw-interpretation",[](SourceFrame &,PhotoDocument &d){d.global.warmth=.3;},
+                [](SourceFrame &s,PhotoDocument &d){s.raw=true;d.asset.raw=true;},true,true},
+            {"camera-matrix-with-CA",[](SourceFrame &s,PhotoDocument &d){
+                s.raw=true;d.asset.raw=true;s.cameraToWork={1,0,0,0,1,0,0,0,1};
+                d.global.chromaticAberration={.2,-.1};},
+                [](SourceFrame &s,PhotoDocument &){s.cameraToWork={1,.15f,0,0,1,.1f,.05f,0,1};},true,false},
+            {"camera-WB-provenance",neutral,[](SourceFrame &s,PhotoDocument &){s.cameraWB={1.9,1,.7,1};},false,false},
+            {"raw-warmth-provenance",neutral,[](SourceFrame &s,PhotoDocument &){s.rawWarmth=.2;},false,false},
+            {"raw-tint-provenance",neutral,[](SourceFrame &s,PhotoDocument &){s.rawTint=-.1;},false,false},
+            {"new-alpha-frame",neutral,[](SourceFrame &s,PhotoDocument &){
+                reinterpret_cast<float *>(s.linear.scanLine(4))[6*4+3]=1;},true,true},
+            {"same-pixels-new-buffer",neutral,[](SourceFrame &s,PhotoDocument &){s.linear=s.linear.copy();},false,true},
+            {"source-hash",neutral,[](SourceFrame &s,PhotoDocument &d){s.sha256=QString(64,'c');d.asset.sourceHash=s.sha256;},false,true},
+            {"axis-support",[](SourceFrame &,PhotoDocument &d){d.global.grainAmount=.2;},
+                [](SourceFrame &s,PhotoDocument &){s.sourcePixelsPerPixelX=2;s.sourcePixelsPerPixelY=3;},true,false}
+        };
+        for(const auto &item:cases){
+            qInfo()<<"source dependency"<<item.name;
+            auto frame=source();auto doc=document(frame);doc.layers={layer("dependency")};
+            doc.layers[0].parameters.exposure=.5;item.setup(frame,doc);
+            LocalPreviewCache cache;QString error;
+            const auto render=[&](LocalPreviewCache *selected){
+                return renderDocumentPreviewLinear(frame,doc,doc.global,3840,error,{},selected);
+            };
+            const auto before=render(&cache);QVERIFY2(!before.isNull(),qPrintable(error));
+            QVERIFY(exact(before,render(nullptr)));const auto builds=cache.stats().builds;
+            item.change(frame,doc);
+            const auto independent=render(nullptr);QVERIFY2(!independent.isNull(),qPrintable(error));
+            if(item.changesPixels)QVERIFY2(!exact(before,independent),item.name);
+            const auto actual=render(&cache);QVERIFY2(!actual.isNull(),qPrintable(error));
+            QVERIFY2(exact(actual,independent),item.name);
+            QCOMPARE(cache.stats().builds,builds+(item.newCoverage?2:1));
+            const auto warmBuilds=cache.stats().builds;QVERIFY(exact(actual,render(&cache)));
+            QCOMPARE(cache.stats().builds,warmBuilds);
+        }
+    }
+    void legacySpatialScaleInvalidatesBaseWithExplicitAxes(){
+        auto frame=source();frame.sourcePixelsPerPixelX=frame.sourcePixelsPerPixelY=1;
+        auto doc=document(frame);doc.global.sharpenAmount=.7;doc.global.sharpenRadius=2;
+        doc.layers={layer("scale")};doc.layers[0].parameters.exposure=.5;
+        LocalPreviewCache cache;QString error;
+        const auto render=[&](LocalPreviewCache *selected){
+            return renderDocumentPreviewLinear(frame,doc,doc.global,3840,error,{},selected);
+        };
+        const auto initial=render(&cache);QVERIFY2(!initial.isNull(),qPrintable(error));
+        QVERIFY(exact(initial,render(nullptr)));const auto builds=cache.stats().builds;
+        frame.sourcePixelsPerPixel=4;
+        QCOMPARE(frame.pixelScaleX(),1.);QCOMPARE(frame.pixelScaleY(),1.);
+        const auto independent=render(nullptr);QVERIFY2(!independent.isNull(),qPrintable(error));
+        QVERIFY(!exact(initial,independent)); // fixture actually exercises physical filter support
+        const auto actual=render(&cache);QVERIFY2(!actual.isNull(),qPrintable(error));
+        QVERIFY2(exact(actual,independent),"cached base reused obsolete legacy spatial scale");
+        QCOMPARE(cache.stats().builds,builds+1); // coverage is independent of spatial filter radius
+    }
     void indexedMaskReusesMetadataButInvalidatesActualMask(){
         const auto frame=source();auto doc=document(frame);doc.layers={layer("cached")};doc.layers[0].parameters.exposure=.5;
         RenderView view;view.localMaskVisible=true;view.localMaskLayer="cached";LocalPreviewCache cache;
