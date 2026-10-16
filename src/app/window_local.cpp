@@ -1,6 +1,7 @@
 #include "window.h"
 #include "local_adjustment_panel.h"
 #include "local_gradient_controls.h"
+#include "local_mask_options.h"
 #include "core/local_layer_operations.h"
 #include "parameter_wheel_guard.h"
 #include <QAction>
@@ -52,6 +53,13 @@ void Window::refreshLocalPanel(){
         localGradients->setDocument(doc,selectedLocalLayer,selectedLocalComponent);
         localGradients->setAvailable(localEditingAvailable());localGradients->setActiveKind(localGradientKind);
     }
+    if(localMaskOptions){
+        const LocalEdit::Mask *mask=nullptr;
+        if(doc)for(const auto &layer:doc->layers)if(layer.id==selectedLocalLayer){mask=&layer.mask;break;}
+        const auto owner=doc?QString::number(doc->asset.id.size())+":"+doc->asset.id+selectedLocalLayer:QString{};
+        localMaskOptions->setMask(mask,owner);localMaskOptions->setAvailable(localEditingAvailable());
+        localMaskOptions->setView(localMaskColor,localMaskBlackWhite);
+    }
     localPanel->setGradientMode(localGradientKind!=0);
     localPanel->setAvailable(localEditingAvailable());syncLocalTool();
 }
@@ -79,9 +87,11 @@ void Window::setupLocalEditing(QDockWidget *dock){
     auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
     localPanel=new LocalAdjustmentPanel;scroll->setWidget(localPanel);
     localGradients=new LocalGradientControls(localPanel);
+    localMaskOptions=new LocalMaskOptions(localPanel);
     if(auto *layout=qobject_cast<QVBoxLayout *>(localPanel->layout())){
         auto *settings=localPanel->findChild<QWidget *>("local-brush-settings");
         layout->insertWidget(layout->indexOf(settings),localGradients);
+        layout->insertWidget(layout->indexOf(settings),localMaskOptions);
     }
     new Ui::ParameterWheelGuard(localPanel);
     adjustmentScope->addTab(scroll,QStringLiteral("局部调整"));dock->setWidget(adjustmentScope);
@@ -112,7 +122,20 @@ void Window::setupLocalEditing(QDockWidget *dock){
     connect(localPanel,&LocalAdjustmentPanel::layerOpacityEdited,this,&Window::editLocalOpacity);
     connect(localPanel,&LocalAdjustmentPanel::layerOpacityFinished,this,[this]{if(localParameterDraft&&localOpacityDraft)finishLocalEdits();});
     connect(localPanel,&LocalAdjustmentPanel::parametersEdited,this,&Window::editLocalParameters);
-    connect(localPanel,&LocalAdjustmentPanel::parametersFinished,this,[this]{if(localParameterDraft&&!localOpacityDraft)finishLocalEdits();});
+    connect(localPanel,&LocalAdjustmentPanel::parametersFinished,this,[this]{if(localParameterDraft&&!localOpacityDraft&&!localFeatherDraft)finishLocalEdits();});
+    connect(localMaskOptions,&LocalMaskOptions::featherEdited,this,&Window::editLocalFeather);
+    connect(localMaskOptions,&LocalMaskOptions::featherFinished,this,[this]{if(localParameterDraft&&localFeatherDraft)finishLocalEdits();});
+    connect(localMaskOptions,&LocalMaskOptions::invertRequested,this,[this](bool value){
+        LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Invert;change.layerId=selectedLocalLayer;change.inverted=value;
+        applyLocalLayerChange(std::move(change),QStringLiteral("蒙版反相"));
+    });
+    const auto showMask=[this]{if(!localPanel->overlayVisible()){localPanel->setOverlayVisible(true);requestEdit();}};
+    connect(localMaskOptions,&LocalMaskOptions::colorSelected,this,[this,showMask](QColor color){
+        localMaskColor=color;canvas->setLocalMaskStyle(localMaskColor,localMaskBlackWhite);showMask();
+    });
+    connect(localMaskOptions,&LocalMaskOptions::blackWhiteToggled,this,[this,showMask](bool value){
+        localMaskBlackWhite=value;canvas->setLocalMaskStyle(localMaskColor,localMaskBlackWhite);if(value)showMask();
+    });
     connect(localPanel,&LocalAdjustmentPanel::brushToolToggled,this,[this](bool active){
         finishLocalEdits();if(active){localGradientKind=0;selectedLocalComponent.clear();}
         refreshLocalPanel();syncCanvasTools();
@@ -200,11 +223,11 @@ void Window::moveLocalBrush(QPointF uv){
 }
 void Window::editLocalParameters(const QString &id,LocalEdit::LocalParameters parameters){
     if(localFinishing)return;
-    if(localParameterBase&&(localOpacityDraft||localDraftLayer!=id))finishLocalEdits();
+    if(localParameterBase&&(localOpacityDraft||localFeatherDraft||localDraftLayer!=id))finishLocalEdits();
     if(!localParameterBase){
         endControlEdit();if(!localEditingAvailable())return;
         localParameterBase=currentPhotoDocument();if(!localParameterBase)return;
-        localOpacityDraft=false;localDraftLayer=id;
+        localOpacityDraft=false;localFeatherDraft=false;localDraftLayer=id;
         ++localIdentity;
     }
     const auto abandonEmptyDraft=[&]{if(!localParameterDraft){localParameterBase.reset();localOpacityDraft=false;localDraftLayer.clear();}};
@@ -243,11 +266,11 @@ void Window::finishLocalEdits(bool canceled){
             if(committed->global!=localParameterBase->global||committed->layers!=localParameterBase->layers)error=QStringLiteral("局部调整基底已变化，未覆盖后续编辑");
             else {auto next=*committed;next.layers=localParameterDraft->layers;candidate=std::make_shared<const LocalEdit::PhotoDocument>(std::move(next));}
         }
-        if(candidate)history.commitSnapshot(photos[current].path,candidate,localParameterDraft?(localOpacityDraft?QStringLiteral("局部层强度"):QStringLiteral("局部调整")):(wasGradient?QStringLiteral("渐变"):QStringLiteral("笔刷")),&error);
+        if(candidate)history.commitSnapshot(photos[current].path,candidate,localParameterDraft?(localFeatherDraft?QStringLiteral("蒙版羽化"):localOpacityDraft?QStringLiteral("局部层强度"):QStringLiteral("局部调整")):(wasGradient?QStringLiteral("渐变"):QStringLiteral("笔刷")),&error);
     }else {brushTransaction.cancel();gradientTransaction.cancel();}
     localParameterBase.reset();localParameterDraft.reset();++revision;++localIdentity;
     gradientPreviousComponent.clear();
-    localOpacityDraft=false;localDraftLayer.clear();
+    localOpacityDraft=false;localFeatherDraft=false;localDraftLayer.clear();
     if(!error.isEmpty())statusBar()->showMessage(error,6000);
     refreshLocalPanel();requestEdit();
 }

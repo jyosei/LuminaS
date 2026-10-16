@@ -28,6 +28,7 @@ class QDockWidget;
 class QTabWidget;
 class LocalAdjustmentPanel;
 class LocalGradientControls;
+class LocalMaskOptions;
 
 enum class Pick { Unmarked, Keep, Reject };
 struct Photo { QString path; Pick pick = Pick::Unmarked; QListWidgetItem *item = nullptr; QString sha256; int cacheState=0;};
@@ -77,6 +78,7 @@ private:
     void createLocalBrushLayer();
     void applyLocalLayerChange(LocalEdit::LayerChange change,const QString &name);
     void editLocalOpacity(const QString &id,double opacity);
+    void editLocalFeather(double feather);
     void beginLocalBrush(QPointF uv,bool subtract);
     void moveLocalBrush(QPointF uv);
     void editLocalParameters(const QString &id,LocalEdit::LocalParameters parameters);
@@ -84,6 +86,9 @@ private:
     bool cancelLocalEdits();
     LocalAdjustmentPanel *localPanel=nullptr;
     LocalGradientControls *localGradients=nullptr;
+    LocalMaskOptions *localMaskOptions=nullptr;
+    QColor localMaskColor{172,145,235};
+    bool localMaskBlackWhite=false,localFeatherDraft=false;
     QTabWidget *adjustmentScope=nullptr;
     QString selectedLocalLayer;
     QString selectedLocalComponent,localAssetId,gradientPreviousComponent;

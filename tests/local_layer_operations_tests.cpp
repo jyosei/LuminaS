@@ -26,6 +26,16 @@ QByteArray pixels(const QImage &image){return QByteArray(reinterpret_cast<const 
 class LocalLayerOperationsTests:public QObject {
     Q_OBJECT
 private slots:
+    void wholeMaskSettingsPreserveComponentsAndGuardVersions(){
+        const auto base=document();QString error;LayerChange c;c.kind=LayerChangeKind::Feather;c.layerId="a";c.feather=3.7;
+        auto changed=changedLayers(base,c,error);QVERIFY2(changed,qPrintable(error));QCOMPARE(changed->layers[0].mask.feather,3.7);
+        QCOMPARE(changed->layers[0].mask.components,base.layers[0].mask.components);QCOMPARE(changed->layers[0].mask.version,base.layers[0].mask.version+1);
+        QCOMPARE(changed->layers[0].version,base.layers[0].version+1);QCOMPARE(changed->asset,base.asset);QCOMPARE(changed->global,base.global);
+        c.kind=LayerChangeKind::Invert;c.inverted=true;changed=changedLayers(*changed,c,error);QVERIFY(changed);QVERIFY(changed->layers[0].mask.invert);
+        QVERIFY(!changedLayers(*changed,c,error));QVERIFY(error.isEmpty());
+        auto exhausted=base;exhausted.layers[0].mask.version=std::numeric_limits<quint64>::max();QVERIFY(!changedLayers(exhausted,c,error));QVERIFY(!error.isEmpty());
+        c.kind=LayerChangeKind::Feather;c.feather=std::numeric_limits<double>::quiet_NaN();QVERIFY(!changedLayers(base,c,error));QVERIFY(!error.isEmpty());
+    }
     void removeComponentPreservesOrderAndUndoPixels(){
         auto base=document();auto &mask=base.layers[0].mask;
         MaskComponent linear;linear.id="linear";linear.geometry=LinearGeometry{{0,0},{32,24}};

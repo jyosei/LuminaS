@@ -130,15 +130,23 @@ void Canvas::setLocalMask(QImage mask){
     if(mask.isNull()||mask.format()!=QImage::Format_Indexed8||image.isNull()||mask.size()!=image.size()){
         localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;update();return;
     }
-    if(localMaskColors.isEmpty()){
-        localMaskColors.reserve(256);
-        // Coverage index 0..255 becomes the view colour; the formula is display
-        // only and never feeds RGB, export or the source document.
-        for(int index=0;index<256;++index)localMaskColors.append(qRgba(172,145,235,int(index*.4+.5)));
-    }
+    if(localMaskColors.isEmpty())updateLocalMaskPalette();
     maskSourceKey=mask.cacheKey();
     mask.setColorTable(localMaskColors);
     localMask=std::move(mask);
+    update();
+}
+void Canvas::updateLocalMaskPalette(){
+    localMaskColors.clear();localMaskColors.reserve(256);
+    for(int i=0;i<256;++i)localMaskColors.append(localMaskBlackWhite?qRgb(i,i,i):
+        qRgba(localMaskColor.red(),localMaskColor.green(),localMaskColor.blue(),int(i*.4+.5)));
+}
+void Canvas::setLocalMaskStyle(QColor color,bool blackWhite){
+    if(!color.isValid()||(color==localMaskColor&&blackWhite==localMaskBlackWhite))return;
+    localMaskColor=color;localMaskBlackWhite=blackWhite;updateLocalMaskPalette();
+    if(!localMask.isNull())localMask.setColorTable(localMaskColors);
+    // Keep coverage provenance and photo serial unchanged: a palette repaint
+    // is not a newly computed mask or an effect frame.
     update();
 }
 void Canvas::setMessage(QString value) { finishBrushGesture(false); stopHandPan(); image = {}; imageContext.clear(); presented={}; localMask={}; localMaskColors.clear();gradientHandles.clear();gradientHandle=-1; dragging=false;cropDragging=false;leftDown=false;message = std::move(value);setAccessibleDescription(message);if(displayPresenter)displayPresenter->clear();updateCursor();updateToolTip();update(); }

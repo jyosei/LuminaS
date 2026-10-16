@@ -47,6 +47,21 @@ bool near(double value,double expected,double tolerance=0.01){return std::abs(va
 class LocalCanvasInputTests : public QObject {
     Q_OBJECT
 private slots:
+    void maskStyleOnlyRepaintsWithoutChangingCanonicalOrCoverage(){
+        Canvas canvas;showCanvas(canvas);QSignalSpy photo(&canvas,&Canvas::framePainted),coverage(&canvas,&Canvas::localMaskPainted);
+        presentImage(canvas,photo);const auto source=canvas.presenter()->canonicalImage();const auto key=source.cacheKey();
+        QImage mask(kImageSize,QImage::Format_Indexed8);mask.fill(127);canvas.setLocalMask(mask);
+        canvas.repaint();QCoreApplication::processEvents();QVERIFY(!coverage.isEmpty());
+        const int photos=photo.count(),masks=coverage.count();
+        canvas.setLocalMaskStyle(QColor(255,0,0),false);canvas.repaint();const auto red=canvas.grab();
+        canvas.setLocalMaskStyle(QColor(255,0,0),true);canvas.repaint();const auto bw=canvas.grab();
+        QCoreApplication::processEvents();QCOMPARE(photo.count(),photos);QCOMPARE(coverage.count(),masks);
+        QCOMPARE(canvas.presenter()->canonicalImage().cacheKey(),key);QCOMPARE(canvas.presenter()->canonicalImage(),source);
+        QCOMPARE(mask.colorCount(),0);QCOMPARE(mask.pixelIndex(10,10),127);
+        const QPoint p(int(canvas.width()/2.*bw.devicePixelRatioF()),int(canvas.height()/2.*bw.devicePixelRatioF()));
+        const auto a=red.toImage().pixelColor(p),b=bw.toImage().pixelColor(p);
+        QVERIFY(a!=b);QCOMPARE(b,QColor(127,127,127));
+    }
     void gradientHandlesHitInDipsOutsidePhotoWithoutPhotoPaint(){
         Canvas canvas;showCanvas(canvas);QSignalSpy painted(&canvas,&Canvas::framePainted);
         presentImage(canvas,painted);const auto fit=fitOf(canvas);

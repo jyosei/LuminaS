@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <QImage>
 #include <QVector>
+#include <QColor>
 class DisplayPresenter;
 class Canvas : public QWidget {
     Q_OBJECT
@@ -36,6 +37,7 @@ public:
     // View-only coverage mask (Format_Indexed8). Rejected and cleared when the
     // size does not match the canonical image; never a source and never exported.
     void setLocalMask(QImage mask);
+    void setLocalMaskStyle(QColor color,bool blackWhite);
     // QA / diagnostics only: never exported and never part of a Recipe.
     void setMonitorProfile(QByteArray icc, QString note = QString());
     void useSystemMonitorProfile();
@@ -69,6 +71,7 @@ protected:
 private:
     void updateCursor();
     void updateToolTip();
+    void updateLocalMaskPalette();
     void imageReady(const QImage &image,const QString &note);
     // Widget point to normalised image position; no clamping, no source maths.
     QPointF normalizedFor(const QPointF &position) const;
@@ -78,6 +81,8 @@ private:
     QImage presented;        // actual displayed frame (device codes); may be null
     QImage localMask;        // Format_Indexed8 view-only coverage; never exported
     QVector<QRgb> localMaskColors; // palette derived from mask indices only
+    QColor localMaskColor{172,145,235};
+    bool localMaskBlackWhite=false;
     DisplayPresenter *displayPresenter=nullptr;
     QMetaObject::Connection screenConnection;
     QString displayNote;

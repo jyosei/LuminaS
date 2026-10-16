@@ -49,6 +49,17 @@ DocumentSnapshot changedLayers(const PhotoDocument &base,const LayerChange &chan
             result.layers.insert(index+1,std::move(copy));break;
         }
         case LayerChangeKind::Remove:result.layers.removeAt(index);break;
+        case LayerChangeKind::Feather:
+        case LayerChangeKind::Invert:{
+            if(change.kind==LayerChangeKind::Feather){
+                if(!std::isfinite(change.feather)||change.feather<0||change.feather>16384)return fail("Mask feather is outside [0,16384]");
+                if(layer.mask.feather==change.feather)return {};
+            }else if(layer.mask.invert==change.inverted)return {};
+            if(layer.mask.version==std::numeric_limits<quint64>::max())return fail("Mask version overflow");
+            if(!bump())return {}; ++layer.mask.version;
+            if(change.kind==LayerChangeKind::Feather)layer.mask.feather=change.feather;else layer.mask.invert=change.inverted;
+            break;
+        }
         case LayerChangeKind::RemoveComponent:{
             qsizetype component=-1;
             for(qsizetype i=0;i<layer.mask.components.size();++i)

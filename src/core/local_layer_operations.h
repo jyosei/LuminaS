@@ -3,7 +3,7 @@
 #include <QStringList>
 
 namespace LocalEdit {
-enum class LayerChangeKind {Rename,Visibility,Opacity,Duplicate,Remove,Reorder,RemoveComponent};
+enum class LayerChangeKind {Rename,Visibility,Opacity,Duplicate,Remove,Reorder,RemoveComponent,Feather,Invert};
 struct LayerChange {
     LayerChangeKind kind=LayerChangeKind::Rename;
     QString layerId,name,duplicateId,componentId;
@@ -11,6 +11,8 @@ struct LayerChange {
     QStringList order; // complete bottom-to-top layer-id permutation
     bool visible=true;
     double opacity=1;
+    double feather=0;
+    bool inverted=false;
 };
 // Value-only operation. Null + empty error is a no-op. No pixel buffers or
 // history counters are created here; EditHistory owns commit/Undo revisions.

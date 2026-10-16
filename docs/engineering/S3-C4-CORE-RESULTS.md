@@ -1,5 +1,7 @@
 # C4羽化/反相核心专项（控件与诊断尚未接入）
 
+后续原生接入和功能专项已完成，见[S3-C4-UI-RESULTS.md](S3-C4-UI-RESULTS.md)。以下保留仅数值阶段的历史状态；最大半径吞吐和D资源认证仍未完成。
+
 2026-10-16。实现合同见[S3-C4-NUMERICAL-CONTRACT.md](S3-C4-NUMERICAL-CONTRACT.md)。本批只推进C4数值与渲染入口，不能据此宣布C4或整个S3完成。
 
 ## 实现

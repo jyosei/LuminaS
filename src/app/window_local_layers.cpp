@@ -37,7 +37,7 @@ void Window::editLocalOpacity(const QString &id,double opacity){
     if(!localParameterBase){
         endControlEdit();if(!localEditingAvailable())return;
         localParameterBase=currentPhotoDocument();if(!localParameterBase)return;
-        localOpacityDraft=true;localDraftLayer=id;++localIdentity;
+        localOpacityDraft=true;localFeatherDraft=false;localDraftLayer=id;++localIdentity;
     }
     LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Opacity;change.layerId=id;change.opacity=opacity;
     QString error;auto candidate=LocalEdit::changedLayers(*localParameterBase,change,error);
@@ -47,6 +47,26 @@ void Window::editLocalOpacity(const QString &id,double opacity){
             statusBar()->showMessage(error,6000);refreshLocalPanel();return;
         }
         candidate=localParameterBase; // dragged back to the original value
+    }
+    if(localParameterDraft&&*localParameterDraft==*candidate)return;
+    localParameterDraft=std::move(candidate);requestEdit();
+}
+void Window::editLocalFeather(double feather){
+    if(localFinishing||!std::isfinite(feather)||feather<0||feather>16384)return;
+    if(localParameterBase&&(!localFeatherDraft||localDraftLayer!=selectedLocalLayer))finishLocalEdits();
+    if(!localParameterBase){
+        endControlEdit();if(!localEditingAvailable())return;
+        localParameterBase=currentPhotoDocument();if(!localParameterBase)return;
+        localFeatherDraft=true;localOpacityDraft=false;localDraftLayer=selectedLocalLayer;++localIdentity;
+    }
+    LocalEdit::LayerChange change;change.kind=LocalEdit::LayerChangeKind::Feather;change.layerId=localDraftLayer;change.feather=feather;
+    QString error;auto candidate=LocalEdit::changedLayers(*localParameterBase,change,error);
+    if(!candidate){
+        if(!error.isEmpty()){
+            if(!localParameterDraft){localParameterBase.reset();localFeatherDraft=false;localDraftLayer.clear();}
+            statusBar()->showMessage(error,6000);refreshLocalPanel();return;
+        }
+        candidate=localParameterBase;
     }
     if(localParameterDraft&&*localParameterDraft==*candidate)return;
     localParameterDraft=std::move(candidate);requestEdit();
