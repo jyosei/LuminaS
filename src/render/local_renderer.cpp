@@ -178,6 +178,45 @@ bool previewRecipe(const PhotoDocument &document,const Recipe &recipe,QString &e
     }
     return true;
 }
+QImage maskView(const SourceFrame &source,const PhotoDocument &document,const Recipe &recipe,
+    int longEdge,const QString &layerId,QString &error,const CancellationToken &cancel,LocalPreviewCache *cache){
+    const AdjustmentLayer *layer=nullptr;
+    for(const auto &candidate:document.layers)if(candidate.id==layerId){layer=&candidate;break;}
+    if(!layer){error="Selected mask layer no longer exists";return {};}
+    const PreparedBrushMask mask(layer->mask);if(!mask.valid()){error=mask.error();return {};}
+    auto geometry=preparedGeometry(recipe);geometry.flipHorizontal=recipe.flipHorizontal;geometry.flipVertical=recipe.flipVertical;
+    QImage alpha;
+    if(geometry==Recipe{}&&std::max(source.linear.width(),source.linear.height())<=longEdge)alpha=source.linear;
+    else alpha=renderLinear(source,geometry,longEdge,error,{},cancel);
+    if(alpha.isNull())return {};
+    const MaskMapping mapping{document.asset.normalizedSize,alpha.size(),document.global};
+    QVector<float> coverage;LocalPreviewCache::Ptr payload;
+    if(cache){
+        const auto key=maskKey(source,document,*layer,alpha.size(),error);if(key.isEmpty())return {};
+        payload=cachedBuild(*cache,key,[&](QString &problem)->LocalPreviewCache::Ptr{
+            LocalPreviewPayload value;
+            if(!rasterizeMaskPreview(mask,mapping,alpha,value.coverage,problem,cancel))return {};
+            return std::make_shared<const LocalPreviewPayload>(std::move(value));
+        },error,cancel);
+        if(!payload)return {};
+    }else if(!rasterizeMaskPreview(mask,mapping,alpha,coverage,error,cancel))return {};
+    const auto *values=payload?payload->coverage.constData():coverage.constData();
+    QImage result(alpha.size(),QImage::Format_Indexed8);
+    if(result.isNull()){error="Mask view allocation";return {};}
+    result.fill(0); // deterministic row padding as well as coverage indices
+    // Indices are coverage only. Canvas supplies UI colours after monitor
+    // presentation; this quantization never enters local RGB or export.
+    for(int y=0;y<result.height();++y){
+        if(isCanceled(cancel)){error="Canceled";return {};}
+        auto *row=result.scanLine(y);
+        for(int x=0;x<result.width();++x){
+            const float value=values[qsizetype(y)*result.width()+x];
+            if(!std::isfinite(value)||value<0||value>1){error="Invalid mask coverage";return {};}
+            row[x]=uchar(std::lround(value*255));
+        }
+    }
+    return result;
+}
 }
 QImage renderDocumentPreviewLinear(const SourceFrame &source,const PhotoDocument &document,
     const Recipe &recipe,int longEdge,QString &error,const CancellationToken &cancel,LocalPreviewCache *cache){
@@ -196,14 +235,25 @@ RenderResult renderDocumentPreview(const SourceFrame &source,const PhotoDocument
     if((view.sharpenMask&&view.pointRange>=0)||view.pointRange< -1||view.pointRange>=recipe.pointColors.size()){
         result.error="Invalid diagnostic view";return result;
     }
+    if(view.localMaskVisible&&(view.localMaskLayer.isEmpty()||view.sharpenMask||view.pointRange>=0)){
+        result.error="Invalid local mask view";return result;
+    }
     if(longEdge<=0||longEdge>3840){result.error="Preview long edge must be 1..3840";return result;}
     // Existing diagnostics display the global stage they diagnose.
     if(!hasActive(document)||view.sharpenMask||view.pointRange>=0){
         auto legacy=renderFrame(source,recipe,longEdge,cache,view,cancel);
-        legacy.fullSize=result.fullSize;return legacy;
+        result.image=std::move(legacy.image);result.error=legacy.error;
+    }else{
+        auto image=linear(source,document,recipe,longEdge,result.error,cancel,localCache);
+        if(!image.isNull())result.image=workToSrgb(image,result.error,cancel);
     }
-    auto image=linear(source,document,recipe,longEdge,result.error,cancel,localCache);
-    if(!image.isNull())result.image=workToSrgb(image,result.error,cancel);
+    result.effectElapsedMs=timer.nsecsElapsed()/1e6;
+    if(result.error.isEmpty()&&view.localMaskVisible){
+        QElapsedTimer maskTimer;maskTimer.start();
+        result.localMask=maskView(source,document,recipe,longEdge,view.localMaskLayer,result.error,cancel,localCache);
+        result.maskElapsedMs=maskTimer.nsecsElapsed()/1e6;
+        if(result.localMask.isNull()){result.image={};if(result.error.isEmpty())result.error="Mask view failed";}
+    }
     result.elapsedMs=timer.nsecsElapsed()/1e6;return result;
 }
 QImage renderDocumentFullLinear(const SourceFrame &source,const PhotoDocument &document,

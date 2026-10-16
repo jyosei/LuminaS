@@ -44,17 +44,21 @@ DisplayPresenter::DisplayPresenter(DisplayQueue::Transform transform, QObject *p
                 // pixels with an sRGB tag and a clear note is a lossless fallback and
                 // needs no additional colour maths here.
                 QImage fallback = canonical;
+                const auto canonicalKey=canonical.cacheKey();
                 fallback.setColorSpace(QColorSpace(QColorSpace::SRgb));
                 note = fallbackNote(frame.error);
+                emit imageReadyTagged(fallback,note,canonicalKey);
                 emit imageReady(fallback, note);
                 return;
             }
             // Tagged input: faking a conversion would misrepresent the pixels, so the
             // failure is reported and no converted frame is presented.
             note = frame.error.trimmed();
+            emit imageReadyTagged(QImage(),note,0);
             emit imageReady(QImage(), note);
             return;
         }
+        emit imageReadyTagged(frame.image,note,frame.canonical.cacheKey());
         emit imageReady(frame.image, note);
     });
     connect(&profileWatcher, &QFutureWatcher<MonitorProfileLookupResult>::finished,

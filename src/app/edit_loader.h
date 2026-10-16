@@ -24,7 +24,7 @@ inline bool sameEditGeneration(const EditTag &a,const EditTag &b){
 inline bool acceptsEditTag(const EditTag &actual,const EditTag &expected){
     return actual==expected||((actual.interactive&&expected.interactive)&&sameEditGeneration(actual,expected));
 }
-struct EditResult {QString path,error,colorNote,sourceHash;QImage image;QSize originalSize,fullSize;EditTag tag;double elapsedMs=0,angle=0;Recipe recipe;bool prefetch=false,sourceRebuilt=false; qint64 sourceBytes=0;QDateTime sourceMtime;SourceFrame workFrame;QRectF workCrop;double workAngle=0;RenderView view;QPointF workPerspective;double workDistortion=0,workLensShading=0;QPointF workChromaticAberration;std::shared_ptr<const SourceFrame> fullGeometry;LocalEdit::DocumentSnapshot document;};
+struct EditResult {QString path,error,colorNote,sourceHash;QImage image;QSize originalSize,fullSize;EditTag tag;double elapsedMs=0,angle=0;Recipe recipe;bool prefetch=false,sourceRebuilt=false; qint64 sourceBytes=0;QDateTime sourceMtime;SourceFrame workFrame;QRectF workCrop;double workAngle=0;RenderView view;QPointF workPerspective;double workDistortion=0,workLensShading=0;QPointF workChromaticAberration;std::shared_ptr<const SourceFrame> fullGeometry;LocalEdit::DocumentSnapshot document;QImage localMask;double effectElapsedMs=0,maskElapsedMs=0;};
 Q_DECLARE_METATYPE(EditResult)
 class EditLoader:public QObject {
     Q_OBJECT

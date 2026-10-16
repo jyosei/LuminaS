@@ -11,6 +11,7 @@
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTabWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -283,8 +284,11 @@ void AdjustmentNavigationTests::nativeWindowNavigation(){
     auto *dock=window.findChild<QDockWidget *>("adjustment-dock");
     auto *choice=navigationChoice(dock);
     QVERIFY(choice);QVERIFY(choice->count()>10);
-    auto *scroll=dock->findChild<QScrollArea *>();QVERIFY(scroll);
-    auto *panel=scroll->widget();QVERIFY(!panel->isEnabled());
+    auto *scope=dock->findChild<QTabWidget *>("adjustment-scope-tabs");QVERIFY(scope);
+    QCOMPARE(scope->currentIndex(),0);
+    auto *scroll=scope->widget(0)->findChild<QScrollArea *>();QVERIFY(scroll);
+    auto *panel=scroll->widget();QCOMPARE(panel->objectName(),QStringLiteral("adjustment-panel"));
+    QVERIFY(!panel->isEnabled());
     QVERIFY(choice->isEnabled());
     window.findChild<QPushButton *>("adjustment-collapse-all")->click();
     choice->setCurrentIndex(choice->count()-1);

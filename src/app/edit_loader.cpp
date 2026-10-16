@@ -95,7 +95,7 @@ EditLoader::~EditLoader(){
 }
 bool EditLoader::canPickNeutral(const QString &path,const Recipe &recipe,EditTag tag) const{
     const QFileInfo info(path);
-    return !closing&&hasCurrentRequest&&recipe==latestRecipe&&latestView.pointRange<0&&!latestView.sharpenMask&&tag==latest&&!tag.interactive&&!busy&&!pending&&path==latestPath&&lastBase.path==path&&!lastBase.linear.isNull()&&lastCrop==recipe.crop&&lastAngle==recipe.angle&&lastPerspective==recipe.perspective&&lastDistortion==recipe.distortion&&lastChromaticAberration==recipe.chromaticAberration&&lastLensShading==recipe.lensShading&&info.size()==lastBytes&&info.lastModified()==lastMtime&&(!lastBase.raw||(lastBase.rawWarmth==recipe.warmth&&lastBase.rawTint==recipe.tint));
+    return !closing&&hasCurrentRequest&&recipe==latestRecipe&&latestView.pointRange<0&&!latestView.sharpenMask&&!latestView.localMaskVisible&&tag==latest&&!tag.interactive&&!busy&&!pending&&path==latestPath&&lastBase.path==path&&!lastBase.linear.isNull()&&lastCrop==recipe.crop&&lastAngle==recipe.angle&&lastPerspective==recipe.perspective&&lastDistortion==recipe.distortion&&lastChromaticAberration==recipe.chromaticAberration&&lastLensShading==recipe.lensShading&&info.size()==lastBytes&&info.lastModified()==lastMtime&&(!lastBase.raw||(lastBase.rawWarmth==recipe.warmth&&lastBase.rawTint==recipe.tint));
 }
 bool EditLoader::pickNeutral(const QString &path,const Recipe &recipe,EditTag tag,QPointF uv,Recipe &picked,QString &error) const{
     if(!canPickNeutral(path,recipe,tag)){error=QStringLiteral("请等待当前预览解析完成后取样");return false;}
@@ -153,7 +153,7 @@ void EditLoader::dispatchLive(){
 }
 void EditLoader::prefetch(const QStringList &paths){if(closing)return;for(const auto &path:paths)if(!imported.contains(path)){imported.insert(path);prefetchQueue.append(path);}emit prefetchProgress(completed,int(imported.size()),failures);dispatch();}
 void EditLoader::remember(const EditResult &result){
-    if(result.view.pointRange>=0||result.view.sharpenMask)return; // transient display modes must never enter the display/prefetch cache
+    if(result.view.pointRange>=0||result.view.sharpenMask||result.view.localMaskVisible)return; // transient display modes must never enter the display/prefetch cache
     if(displayCache.contains(result.path))displayBytes-=displayCache[result.path].image.sizeInBytes();displayOrder.removeAll(result.path);
     auto entry=result;entry.workFrame={};entry.fullGeometry.reset();displayCache[result.path]=std::move(entry);displayOrder.append(result.path);displayBytes+=result.image.sizeInBytes();
     while(displayBytes>512LL*1024*1024&&!displayOrder.isEmpty()){const auto path=displayOrder.takeFirst();displayBytes-=displayCache.take(path).image.sizeInBytes();}
@@ -240,6 +240,7 @@ EditResult EditLoader::process(const Request &request){
             LocalEdit::renderDocumentPreview(previewSource,*request.document,applied,3840,&spatialCache,request.view,request.cancel,localPreviewCache.get()):
             renderFrame(previewSource,applied,0,&spatialCache,request.view,request.cancel);
         result.document=request.document;result.error=rendered.error;result.image=rendered.image;
+        result.localMask=rendered.localMask;result.effectElapsedMs=request.document?rendered.effectElapsedMs:rendered.elapsedMs;result.maskElapsedMs=rendered.maskElapsedMs;
         if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
         result.originalSize=proxy.originalSize;result.fullSize=renderedSize(proxy.originalSize,request.recipe);result.colorNote=proxy.colorNote;result.sourceHash=proxy.sha256;
         if(raw&&request.tag.interactive&&(warmth!=proxy.rawWarmth||tint!=proxy.rawTint))result.colorNote+=QStringLiteral(" · WB拖动缓存反馈，松手源精算");
@@ -269,6 +270,7 @@ EditResult EditLoader::processLive(const Request &request){
         LocalEdit::renderDocumentPreview(base,*request.document,applied,3840,&spatialCache,request.view,request.cancel,localPreviewCache.get()):
         renderFrame(base,applied,0,&spatialCache,request.view,request.cancel);
     result.document=request.document;result.image=rendered.image;result.error=rendered.error;
+    result.localMask=rendered.localMask;result.effectElapsedMs=request.document?rendered.effectElapsedMs:rendered.elapsedMs;result.maskElapsedMs=rendered.maskElapsedMs;
     if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
     result.sourceHash=base.sha256;result.originalSize=base.originalSize;
     result.fullSize=renderedSize(base.originalSize,request.recipe);result.colorNote=base.colorNote+QStringLiteral(" · 4K缓存实时反馈");result.sourceBytes=request.baseBytes;result.sourceMtime=request.baseMtime;result.elapsedMs=double(timer.elapsed());return result;

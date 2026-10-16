@@ -140,6 +140,34 @@ private slots:
         cache.clear();QVERIFY(exact(newFrame,render()));QCOMPARE(cache.stats().builds,quint64(10));
         QVERIFY(cache.stats().retainedBytes<=256*1024*1024);
     }
+    void neutralLayerMaskIsSeparateAndReusesFloatCoverage(){
+        const auto frame=source();auto doc=document(frame);doc.layers={layer("overlay")};
+        RenderView view;view.localMaskVisible=true;view.localMaskLayer="overlay";LocalPreviewCache cache;
+        const auto plain=renderDocumentPreview(frame,doc,doc.global);
+        const auto shown=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view,{},&cache);
+        QVERIFY2(shown.error.isEmpty(),qPrintable(shown.error));QVERIFY(exact(plain.image,shown.image));
+        QCOMPARE(shown.localMask.format(),QImage::Format_Indexed8);QCOMPARE(shown.localMask.size(),plain.image.size());
+        QString error;QVector<float> expected;const BrushMaskReference reference(doc.layers[0].mask);
+        QVERIFY(reference.rasterize({frame.originalSize,frame.linear.size(),doc.global},frame.linear,
+            QRect(QPoint(),frame.linear.size()),expected,error));
+        int covered=0;
+        for(int y=0;y<shown.localMask.height();++y)for(int x=0;x<shown.localMask.width();++x){
+            const auto value=shown.localMask.constScanLine(y)[x];covered+=value>0;
+            QCOMPARE(value,uchar(std::lround(expected[y*shown.localMask.width()+x]*255)));
+        }
+        QVERIFY(covered>0);QCOMPARE(cache.stats().builds,quint64(1));
+        doc.layers[0].parameters.exposure=.5;
+        const auto adjusted=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view,{},&cache);
+        QVERIFY2(adjusted.error.isEmpty(),qPrintable(adjusted.error));QVERIFY(exact(shown.localMask,adjusted.localMask));
+        QCOMPARE(cache.stats().builds,quint64(2)); // effect builds prefix but reuses mask
+        QVERIFY(exact(adjusted.image,renderDocumentPreview(frame,doc,doc.global).image));
+        doc.layers[0].enabled=false;
+        const auto hidden=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view,{},&cache);
+        QVERIFY(exact(hidden.localMask,shown.localMask));QVERIFY(exact(hidden.image,plain.image));
+        view.sharpenMask=true;
+        const auto invalid=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view);
+        QVERIFY(invalid.image.isNull());QVERIFY(!invalid.error.isEmpty());
+    }
     void rejectsWrongSourceAndCancellation(){
         auto frame=source();const auto doc=document(frame);QString error;
         auto bad=frame;bad.sha256=QString(64,'b');QVERIFY(renderDocumentFullLinear(bad,doc,error).isNull());QVERIFY(!error.isEmpty());

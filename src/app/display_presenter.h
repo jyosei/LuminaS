@@ -72,6 +72,9 @@ public:
 
 signals:
     void imageReady(const QImage &image,const QString &note);
+    // Provenance of the actual delivered frame, including a running intermediate
+    // frame of the same epoch. It need not be canonicalImage() at delivery time.
+    void imageReadyTagged(const QImage &image,const QString &note,qint64 canonicalKey);
     void presentationCleared();
     void displayProfileChanged(const QByteArray &effectiveIcc);
 

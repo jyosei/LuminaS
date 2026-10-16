@@ -33,6 +33,8 @@
 #include "core/parametric_curve.h"
 #include "display_presenter.h"
 #include "export_dialog.h"
+#include "local_adjustment_panel.h"
+#include <QTabWidget>
 
 Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(parent) {
     editor=new EditLoader(this);
@@ -202,12 +204,13 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     auto *hint=new QLabel(QStringLiteral("调整只作用当前照片。标记和参数暂存于本次会话。校直维持裁框，边角可再裁去。"));hint->setWordWrap(true);form->addRow(hint);
     for(auto *value:editPanel->findChildren<QDoubleSpinBox *>()){value->setMinimumWidth(76);value->setMaximumWidth(94);}
     new Ui::ParameterWheelGuard(editPanel);
-    sections->addStretch();auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setWidget(editPanel);dock->setWidget(scroll);Ui::installAdjustmentNavigation(dock,scroll);addDockWidget(Qt::RightDockWidgetArea,dock);resizeDocks({dock},{350},Qt::Horizontal);editPanel->setEnabled(false);
+    sections->addStretch();auto *scroll=new QScrollArea;scroll->setObjectName("global-adjustment-scroll");scroll->setWidgetResizable(true);scroll->setWidget(editPanel);dock->setWidget(scroll);Ui::installAdjustmentNavigation(dock,scroll);addDockWidget(Qt::RightDockWidgetArea,dock);resizeDocks({dock},{350},Qt::Horizontal);editPanel->setEnabled(false);
+    setupLocalEditing(dock);
     connect(browse,&QAction::triggered,this,[this,dock]{clearPointColorModes();if(auto *b=findChild<QPushButton *>("wb-picker"))b->setChecked(false);endControlEdit();if(cropSelecting){markViewEpochChange();cropSelecting=false;canvas->setCropMode(false);requestEdit();}dock->hide();});connect(edit,&QAction::triggered,dock,&QWidget::show);
     connect(canvas,&Canvas::cropPicked,this,[this](QRectF crop){auto r=currentRecipe();r.crop=crop;if(cropSelecting)markViewEpochChange();cropSelecting=false;canvas->setCropMode(false);applyRecipe(r,QStringLiteral("裁剪"));});
     auto shortcut=[this](const QKeySequence &key,auto action){auto *s=new QShortcut(key,this);connect(s,&QShortcut::activated,this,[action]{if(qobject_cast<QLineEdit *>(QApplication::focusWidget()))return;action();});};
     shortcut(QKeySequence::Undo,[this]{undoEdit();});shortcut(QKeySequence::Redo,[this]{redoEdit();});
-    shortcut(QKeySequence(Qt::Key_Escape),[this]{if(pointPickerActive){clearPointColorModes();updatePickerState();return;}if(sharpenMaskActive){clearPointColorModes();requestEdit();return;}if(auto *b=findChild<QPushButton *>("wb-picker");b&&b->isChecked()){b->setChecked(false);return;}if(cropSelecting)markViewEpochChange();cropSelecting=false;canvas->setCropMode(false);restoreControls();requestEdit();});
+    shortcut(QKeySequence(Qt::Key_Escape),[this]{if(cancelLocalEdits())return;if(pointPickerActive){clearPointColorModes();updatePickerState();return;}if(sharpenMaskActive){clearPointColorModes();requestEdit();return;}if(auto *b=findChild<QPushButton *>("wb-picker");b&&b->isChecked()){b->setChecked(false);return;}if(cropSelecting)markViewEpochChange();cropSelecting=false;canvas->setCropMode(false);restoreControls();requestEdit();});
     connect(editor,&EditLoader::ready,this,[this](const EditResult &result){presentResult(result);});
     connect(editor,&EditLoader::prefetchProgress,this,[this](int done,int total,int failed){cacheCompleted=done;cacheTotal=total;cacheFailures=failed;refreshLabels();});
     connect(editor,&EditLoader::prefetched,this,[this](const EditResult &result){
@@ -243,6 +246,7 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     Ui::setFilmstripDisplayProfile(strip,canvas->presenter()->monitorIcc());
 }
 Window::~Window(){
+    finishLocalEdits();
     restoring=true;current=-1;
     if(editor)editor->invalidate();
     // Child focus-out signals may fire from QWidget's base destructor, after history dies.
@@ -271,7 +275,7 @@ bool Window::acceptResult(const EditResult &result) const{
 void Window::presentResult(const EditResult &result,bool immediate){
     const int range=pointRangeActive&&!comparing&&!cropSelecting&&pointColorPanel?pointColorPanel->selectedIndex():-1;
     // Validate the entire transient view: a preview rendered for another display mode must never be shown.
-    if(result.view.pointRange!=range||result.view.sharpenMask!=(sharpenMaskActive&&!comparing&&!cropSelecting))return;
+    if(result.view!=requestedView||result.view.pointRange!=range||result.view.sharpenMask!=(sharpenMaskActive&&!comparing&&!cropSelecting))return;
         const bool liveFeedback=acceptResult(result);
         if(!liveFeedback||result.tag.job<presentedJob)return;
         presentedJob=result.tag.job;
@@ -280,13 +284,14 @@ void Window::presentResult(const EditResult &result,bool immediate){
         if(error.isEmpty()&&!photos[current].sha256.isEmpty()&&photos[current].sha256!=result.sourceHash)error=QStringLiteral("源文件内容已变化，请关闭重开；不继续应用旧参数");
         previewError=error;
         const int previousCacheState=photos[current].cacheState;
-        if(!error.isEmpty()){photos[current].cacheState=2;displayed.clear();canvas->setMessage(QStringLiteral("无法读取这张照片\n")+error);histogram->setImage({});details->setText(error);editPanel->setEnabled(false);
+        if(!error.isEmpty()){localSourceReady=false;photos[current].cacheState=2;displayed.clear();canvas->setMessage(QStringLiteral("无法读取这张照片\n")+error);histogram->setImage({});details->setText(error);editPanel->setEnabled(false);
             if(auto *retry=findChild<QPushButton *>("preview-retry")){retry->setVisible(true);retry->setEnabled(!error.contains(QStringLiteral("源文件内容已变化")));retry->setToolTip(error);}}
         else {
             photos[current].cacheState=1;
             if(auto *retry=findChild<QPushButton *>("preview-retry"))retry->hide();
             currentOriginalSize=result.originalSize;updateCropAspect();
             photos[current].sha256=result.sourceHash;displayed=result.path;canvas->setImage(result.image,QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8").arg(result.path).arg(result.tag.session).arg(result.tag.revision).arg(result.tag.geometry).arg(result.tag.localIdentity).arg(result.tag.viewEpoch).arg(result.view.pointRange).arg(result.view.sharpenMask?1:0));
+            canvas->setLocalMask(result.view.localMaskVisible?result.localMask:QImage{});bindLocalAsset(result);
             // The diagnostic mask is not a photograph: keep the real histogram and filmstrip icon.
             if(!result.view.sharpenMask)histogram->setImage(result.image);
             displayedAngle=result.angle;
@@ -305,7 +310,7 @@ void Window::presentResult(const EditResult &result,bool immediate){
             presetChoice->setEnabled(!comparing&&!cropSelecting);for(const auto &name:{"preset-apply","preset-save","preset-load"})editPanel->findChild<QPushButton *>(name)->setEnabled(!comparing&&!cropSelecting);
             canvas->setCropMode(cropSelecting);
         }
-        updatePickerState();refreshPresetStrengthState();
+        refreshLocalPanel();updatePickerState();refreshPresetStrengthState();
         if(previousCacheState!=photos[current].cacheState)refreshLabels();
         const bool stillLive=acceptResult(result);
         if(!immediate&&stillLive)emit previewChanged(result.path,error.isEmpty());
@@ -329,6 +334,7 @@ void Window::addFiles(const QStringList &paths) {
 }
 void Window::activate(int index) {
     if (index < 0 || index >= photos.size() || photos[index].item->isHidden()) return;
+    finishLocalEdits();localSourceReady=false;
     if(current>=0&&index!=current&&!comparing&&!cropSelecting&&history.commit(photos[current].path,live,QStringLiteral("调整")))++revision;
     current = index; ++token; markViewEpochChange(); displayed.clear();
     currentOriginalSize={};
@@ -345,6 +351,7 @@ void Window::mark(Pick pick) {
     photos[current].pick = pick; refreshLabels(); filter(filters->currentIndex());
 }
 void Window::filter(int value) {
+    finishLocalEdits();
     endControlEdit();
     const QSignalBlocker block(strip);
     { const QSignalBlocker comboBlock(filters); filters->setCurrentIndex(value); }
@@ -356,12 +363,12 @@ void Window::filter(int value) {
         if (visible && first < 0) first = i;
     }
     if (current < 0 || photos[current].item->isHidden()) {
-        current = -1; ++token; displayed.clear();
+        current = -1;localSourceReady=false; ++token; displayed.clear();
         ++draft;expected={session,revision,draft,token,++geometry,false,localIdentity,++viewEpoch};editPanel->setEnabled(false);
         if (first >= 0) activate(first);
         else { editor->invalidate();canvas->setMessage(QStringLiteral("当前筛选没有照片"));histogram->setImage({});details->setText(QStringLiteral("更换筛选或打开更多 JPEG")); }
     }
-    refreshLabels();
+    refreshLabels();refreshLocalPanel();
 }
 void Window::step(int delta) {
     for (int i = current + delta; i >= 0 && i < photos.size(); i += delta) if (!photos[i].item->isHidden()) { activate(i); return; }
@@ -399,7 +406,7 @@ void Window::updateCropAspect(){
 void Window::restoreControls(){
     clearPointColorModes();
     if(presetStrengthActive&&presetStrengthDirty){presetStrengthActive=false;presetStrengthDirty=false;if(presetStrengthSlider)presetStrengthSlider->setSliderDown(false);}
-    live=current<0?Recipe{}:history.value(photos[current].path);syncControlsFromLive();
+    live=current<0?Recipe{}:history.value(photos[current].path);syncControlsFromLive();refreshLocalPanel();
 }
 void Window::syncControlsFromLive(){
     restoring=true;
@@ -434,15 +441,22 @@ void Window::requestEdit(){
     if(cropSelecting){recipe.crop={0,0,1,1};recipe.angle=0;recipe.flipHorizontal=recipe.flipVertical=false;}
     expected={session,revision,++draft,++token,geometry,false,localIdentity,viewEpoch};
     if(!comparing&&!cropSelecting&&curveEditor->isDragging())expected.interactive=true;
+    if(!comparing&&!cropSelecting&&(brushTransaction.active()||localParameterDraft))expected.interactive=true;
     if(!comparing&&!cropSelecting)for(auto *slider:editPanel->findChildren<QSlider *>())if(slider->isSliderDown())expected.interactive=true;
     RenderView view;if(pointRangeActive&&!comparing&&!cropSelecting&&pointColorPanel&&pointColorPanel->selectedIndex()>=0&&pointColorPanel->selectedIndex()<recipe.pointColors.size())view.pointRange=pointColorPanel->selectedIndex();else if(pointRangeActive){pointRangeActive=false;pointColorPanel->setRangeActive(false);}
     // Compare and crop replace the whole frame; the diagnostic mask is not meaningful there.
     if(sharpenMaskActive&&(comparing||cropSelecting)){sharpenMaskActive=false;if(sharpenMaskPreview){const QSignalBlocker block(sharpenMaskPreview);sharpenMaskPreview->setChecked(false);}}
     view.sharpenMask=sharpenMaskActive&&!comparing&&!cropSelecting;
+    if(!comparing&&!cropSelecting&&!view.sharpenMask&&view.pointRange<0&&adjustmentScope&&adjustmentScope->currentIndex()==1&&localPanel->overlayVisible()&&!selectedLocalLayer.isEmpty()){
+        view.localMaskVisible=true;view.localMaskLayer=selectedLocalLayer;
+    }
     const int role=comparing?1:cropSelecting?2:0;
     if(view!=requestedView||role!=requestedViewRole)markViewEpochChange();
     requestedView=view;requestedViewRole=role;expected.viewEpoch=viewEpoch;
-    editor->request(photos[current].path,recipe,expected,view);
+    const auto document=currentPhotoDocument();
+    if(!comparing&&!cropSelecting&&document&&(!document->layers.isEmpty()||view.localMaskVisible)){
+        QString error;if(!editor->requestDocument(photos[current].path,document,expected,error,view))statusBar()->showMessage(error,6000);
+    }else editor->request(photos[current].path,recipe,expected,view);
     previewError.clear();
     updatePickerState();refreshPresetStrengthState();
 }
@@ -458,6 +472,7 @@ void Window::updatePickerState(){
     pickerHint->setText(message);button->setAccessibleDescription(message);updatePointPickerState(available);syncCanvasTools();
 }
 void Window::showAdjustmentSection(const QString &title){
+    if(adjustmentScope)adjustmentScope->setCurrentIndex(0);
     if(auto *edit=findChild<QAction *>("workspace-edit"))edit->setChecked(true);
     if(auto *dock=findChild<QDockWidget *>("adjustment-dock")){
         dock->show();if(auto *choice=dock->findChild<QComboBox *>("adjustment-section-choice")){
@@ -472,11 +487,12 @@ void Window::beginCropSelection(){
     showAdjustmentSection(QStringLiteral("构图"));requestEdit();
 }
 void Window::syncCanvasTools(){
+    syncLocalTool();
     const auto *neutral=findChild<QPushButton *>("wb-picker");const bool picking=pointPickerActive||(neutral&&neutral->isChecked());
-    if(auto *hand=findChild<QToolButton *>("tool-hand")){QSignalBlocker block(hand);hand->setChecked(!cropSelecting&&!picking);}
+    if(auto *hand=findChild<QToolButton *>("tool-hand")){QSignalBlocker block(hand);hand->setChecked(!cropSelecting&&!picking&&!canvas->brushMode());}
     if(auto *crop=findChild<QToolButton *>("tool-crop")){QSignalBlocker block(crop);crop->setChecked(cropSelecting);}
     if(auto *exit=findChild<QPushButton *>("exit-crop"))exit->setVisible(cropSelecting);
-    if(auto *hint=findChild<QLabel *>("navigation-hint"))hint->setText(cropSelecting?QStringLiteral("拖选后应用裁剪，Esc退出"):picking?QStringLiteral("点击照片取样，Esc取消"):QStringLiteral("滚轮缩放 · 小手拖动"));
+    if(auto *hint=findChild<QLabel *>("navigation-hint"))hint->setText(cropSelecting?QStringLiteral("拖选后应用裁剪，Esc退出"):picking?QStringLiteral("点击照片取样，Esc取消"):canvas->brushMode()?QStringLiteral("笔刷涂抹 · Alt 擦除 · Space 平移"):QStringLiteral("滚轮缩放 · 小手拖动"));
 }
 bool Window::autoWhiteBalance(QString &error){
     if(!neutralPickerAvailable()){error=pickerHint->text();return false;}
@@ -522,12 +538,14 @@ void Window::editControls(QDoubleSpinBox *changed){
     if(live.angle!=angle->value())++geometry;live.angle=angle->value();requestEdit();
 }
 void Window::endControlEdit(){
+    finishLocalEdits();
     if(restoring||current<0||comparing||cropSelecting)return;
     if(presetStrengthActive&&presetStrengthDirty&&live==presetStrengthLast){finishPresetStrength();return;}
     if(history.commit(photos[current].path,live,QStringLiteral("调整"))){++revision;++geometry;refreshLabels();requestEdit();}
     else if(expected.interactive)requestEdit();
 }
 void Window::applyRecipe(const Recipe &recipe,const QString &name){
+    finishLocalEdits();
     if(current<0||!validRecipe(recipe))return;
     invalidatePresetStrength();
     if(comparing||cropSelecting)markViewEpochChange();comparing=false;cropSelecting=false;canvas->setCropMode(false);compareButton->setChecked(false);
@@ -535,10 +553,12 @@ void Window::applyRecipe(const Recipe &recipe,const QString &name){
     ++geometry;restoreControls();refreshLabels();requestEdit();
 }
 void Window::undoEdit(){
+    finishLocalEdits();++localIdentity;
     if(current<0)return;endControlEdit();const auto path=history.undo();if(path.isEmpty())return;
     restoreControls();++revision;++geometry;filter(0);for(int i=0;i<photos.size();++i)if(photos[i].path==path){activate(i);return;}
 }
 void Window::redoEdit(){
+    finishLocalEdits();++localIdentity;
     if(current<0)return;endControlEdit();const auto path=history.redo();if(path.isEmpty())return;
     restoreControls();++revision;++geometry;filter(0);for(int i=0;i<photos.size();++i)if(photos[i].path==path){activate(i);return;}
 }

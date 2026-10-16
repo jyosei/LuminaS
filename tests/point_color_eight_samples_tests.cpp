@@ -136,7 +136,7 @@ void PointColorEightSamplesTest::eightSampleLiveEditAndHistory()
     auto *hueSlider = sliderByName(&window, QStringLiteral("slider-point-color-hue-shift"));
     QVERIFY2(hueSlider && hueSlider->isEnabled(),
              "hue-shift slider present and enabled for sample 0");
-    auto *scroll=window.findChild<QScrollArea *>();QVERIFY(scroll);scroll->ensureWidgetVisible(hueSlider);QTest::qWait(50);QVERIFY(hueSlider->visibleRegion().contains(hueSlider->rect()));
+    auto *scroll=window.findChild<QScrollArea *>(QStringLiteral("global-adjustment-scroll"));QVERIFY(scroll);scroll->ensureWidgetVisible(hueSlider);QTest::qWait(50);QVERIFY(hueSlider->visibleRegion().contains(hueSlider->rect()));
 
     QSignalSpy previews(&window, &Window::previewChanged);
     QSignalSpy paintings(window.findChild<Canvas *>(), &Canvas::framePainted);

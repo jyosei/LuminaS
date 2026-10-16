@@ -8,6 +8,7 @@
 #include <QSet>
 #include "edit_loader.h"
 #include "core/commands.h"
+#include "local_brush_transaction.h"
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include "preview_histogram.h"
@@ -21,6 +22,9 @@
 namespace Export {class Queue;}
 class ExportDialog;
 class QFormLayout;
+class QDockWidget;
+class QTabWidget;
+class LocalAdjustmentPanel;
 
 enum class Pick { Unmarked, Keep, Reject };
 struct Photo { QString path; Pick pick = Pick::Unmarked; QListWidgetItem *item = nullptr; QString sha256; int cacheState=0;};
@@ -52,11 +56,30 @@ public:
     bool pickPointColor(QPointF uv,QString &error);
     void showExportDialog();
     QList<Export::Asset> exportAssets() const;
+    LocalEdit::DocumentSnapshot currentPhotoDocument() const;
 signals:
     void previewChanged(const QString &path, bool success);
 protected:
+    void changeEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 private:
+    void setupLocalEditing(QDockWidget *dock);
+    void refreshLocalPanel();
+    void syncLocalTool();
+    bool localEditingAvailable() const;
+    void bindLocalAsset(const EditResult &result);
+    void createLocalBrushLayer();
+    void beginLocalBrush(QPointF uv,bool subtract);
+    void moveLocalBrush(QPointF uv);
+    void editLocalParameters(const QString &id,LocalEdit::LocalParameters parameters);
+    void finishLocalEdits(bool canceled=false);
+    bool cancelLocalEdits();
+    LocalAdjustmentPanel *localPanel=nullptr;
+    QTabWidget *adjustmentScope=nullptr;
+    QString selectedLocalLayer;
+    bool localSourceReady=false,localFinishing=false,localToolSync=false;
+    LocalEdit::BrushTransaction brushTransaction;
+    LocalEdit::DocumentSnapshot localParameterBase,localParameterDraft;
     Export::Queue *exportQueue=nullptr;
     QPointer<ExportDialog> exportDialog;
     void inspectExport(const QString &path,const QString &source);

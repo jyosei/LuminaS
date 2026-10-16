@@ -42,7 +42,7 @@ private slots:
     void wheelOverUnfocusedParameterScrollsPanel(){
         QTemporaryDir dir;QVERIFY(dir.isValid());QImage image(120,80,QImage::Format_RGB32);image.fill(Qt::gray);const auto path=dir.filePath("wheel.jpg");QVERIFY(image.save(path));
         Window w(nullptr,QStringLiteral(""));w.show();w.addFiles({path});QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);QVERIFY(openAllInspectorSections(w));
-        auto *spin=w.findChild<QDoubleSpinBox *>("exposure");auto *scroll=w.findChild<QScrollArea *>();QVERIFY(spin);QVERIFY(scroll);scroll->ensureWidgetVisible(spin);QTest::qWait(50);
+        auto *spin=w.findChild<QDoubleSpinBox *>("exposure");auto *scroll=w.findChild<QScrollArea *>(QStringLiteral("global-adjustment-scroll"));QVERIFY(spin);QVERIFY(scroll);scroll->ensureWidgetVisible(spin);QTest::qWait(50);
         w.findChild<QLineEdit *>("adjustment-search")->setFocus();QVERIFY(!spin->hasFocus());const auto before=w.currentRecipe();const int position=scroll->verticalScrollBar()->value();
         QWheelEvent wheel(QPointF(spin->rect().center()),QPointF(spin->mapToGlobal(spin->rect().center())),QPoint(),QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
         QApplication::sendEvent(spin,&wheel);QTest::qWait(50);QCOMPARE(w.currentRecipe(),before);QVERIFY(scroll->verticalScrollBar()->value()>position);
@@ -54,7 +54,7 @@ private slots:
         QTemporaryDir dir;QVERIFY(dir.isValid());QImage image(240,160,QImage::Format_RGB32);image.fill(QColor(130,120,100));const auto path=dir.filePath("curve.jpg");QVERIFY(image.save(path));
         Window w(nullptr,QStringLiteral(""));w.show();w.addFiles({path});QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);
         w.findChild<QTabBar *>("adjustment-groups")->setCurrentIndex(2);auto *section=card(w,QStringLiteral("点曲线"));QVERIFY(section);section->findChild<QToolButton *>("card-header")->setChecked(true);
-        auto *curve=section->findChild<CurveEditor *>();QVERIFY(curve);w.findChild<QScrollArea *>()->ensureWidgetVisible(curve);QTest::qWait(50);curve->setFocus();QTRY_VERIFY(curve->hasFocus());
+        auto *curve=section->findChild<CurveEditor *>();QVERIFY(curve);w.findChild<QScrollArea *>(QStringLiteral("global-adjustment-scroll"))->ensureWidgetVisible(curve);QTest::qWait(50);curve->setFocus();QTRY_VERIFY(curve->hasFocus());
         QTest::keyClick(curve,Qt::Key_Insert);QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);QCOMPARE(w.currentRecipe().curves[0].size(),3);QCOMPARE(w.currentRecipe().curves[0][1],QPointF(.5,.5));
         QTest::keyClick(curve,Qt::Key_Up);QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);QVERIFY(qAbs(w.currentRecipe().curves[0][1].y()-.505)<1e-12);
         QTest::keyClick(curve,Qt::Key_Z,Qt::ControlModifier);QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);QCOMPARE(w.currentRecipe().curves[0][1].y(),.5);
@@ -63,7 +63,7 @@ private slots:
     void canvasToolStateAndCropNavigation(){
         QTemporaryDir dir;QVERIFY(dir.isValid());QImage image(180,120,QImage::Format_RGB32);image.fill(QColor(140,115,100));const auto path=dir.filePath("tools.jpg");QVERIFY(image.save(path));
         Window w(nullptr,QStringLiteral(""));w.show();w.addFiles({path});QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);
-        auto *hand=w.findChild<QToolButton *>("tool-hand");auto *crop=w.findChild<QToolButton *>("tool-crop");auto *exit=w.findChild<QPushButton *>("exit-crop");auto *wb=w.findChild<QPushButton *>("wb-picker");auto *scroll=w.findChild<QScrollArea *>();
+        auto *hand=w.findChild<QToolButton *>("tool-hand");auto *crop=w.findChild<QToolButton *>("tool-crop");auto *exit=w.findChild<QPushButton *>("exit-crop");auto *wb=w.findChild<QPushButton *>("wb-picker");auto *scroll=w.findChild<QScrollArea *>(QStringLiteral("global-adjustment-scroll"));
         QVERIFY(hand);QVERIFY(crop);QVERIFY(exit);QVERIFY(wb);QVERIFY(scroll);QVERIFY(hand->isChecked());QVERIFY(!crop->isChecked());QVERIFY(exit->isHidden());
         auto *white=card(w,QStringLiteral("白平衡"));QVERIFY(white);white->findChild<QToolButton *>("card-header")->setChecked(true);scroll->ensureWidgetVisible(wb);QTest::qWait(50);QTest::mouseClick(wb,Qt::LeftButton);
         QVERIFY(wb->isChecked());QVERIFY(!hand->isChecked());QVERIFY(!crop->isChecked());const auto recipe=w.currentRecipe();

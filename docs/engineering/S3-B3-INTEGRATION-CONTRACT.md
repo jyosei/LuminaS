@@ -1,6 +1,6 @@
 # B3–B5 原生接线合同（待实施）
 
-2026-10-16，GPT 架构决定。这里的 Canvas/Window 接口是下一批计划，**不是已经实现的功能**。实际已有接口为 `EditLoader::requestDocument`、`LocalAdjustmentPanel` 及 `local_renderer`。
+2026-10-16，GPT 架构决定。下文最初作为接线计划；现已实现主窗口笔刷/参数事务与覆盖显示并通过合成 JPEG 原生专项，实际证据见 S3-B3-NATIVE-RESULTS.md。真实 R7、完整源与端到端计时仍待验收，不能将本合同本身作为完成证据。
 
 ## 所有权与界面
 
