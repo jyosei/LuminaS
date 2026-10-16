@@ -14,6 +14,31 @@ Mask mixed(){Mask m;MaskComponent a;a.id="add";a.geometry=LinearGeometry{{400,0}
 class LocalMaskFeatherTests:public QObject {
     Q_OBJECT
 private slots:
+    void finiteAddBoundsKeepHaloGapsAndInfiniteLinearSafe(){
+        const QSize size(513,32);const auto image=alpha(size);QString error;
+        for(int mode=0;mode<5;++mode)for(bool invert:{false,true}){
+            Mask mask;mask.feather=3.7;mask.invert=invert;MaskComponent add;add.id="brush";
+            BrushGeometry brush;brush.points={{512.5,32.5}};brush.radius=9;brush.hardness=.4;add.geometry=brush;mask.components={add};
+            if(mode==1)mask.components[0].geometry=RadialGeometry{{512.5,32.5},16,7,39};
+            if(mode>=2){MaskComponent linear;linear.id="linear";linear.geometry=LinearGeometry{{-1026,-64},{1026,64}};linear.strength=mode==3?0:.4;
+                linear.operation=mode==2?MaskOperation::Subtract:MaskOperation::Add;mask.components.append(linear);}
+            PreparedBrushMask prepared(mask);BrushMaskReference reference(mask);QVERIFY(prepared.valid());
+            Recipe geometry;geometry.crop={.03,.02,.94,.96};geometry.angle=6;geometry.perspective={.05,-.07};geometry.distortion=.1;geometry.flipHorizontal=invert;
+            MaskMapping mapping{{1026,64},size,geometry};QVector<float> expected,actual;
+            QVERIFY2(reference.rasterize(mapping,image,QRect(QPoint(),size),expected,error),qPrintable(error));
+            QVERIFY2(rasterizeMaskPreview(prepared,mapping,image,actual,error),qPrintable(error));
+            for(int i=0;i<actual.size();++i)QVERIFY2(std::abs(actual[i]-expected[i])<2e-6f,qPrintable(QString("mode%1 index%2").arg(mode).arg(i)));
+            mapping.geometry={};MaskRasterScratch scratch;QVector<float> far;
+            QVERIFY(prepared.rasterize(mapping,image,QRect(512,0,1,32),far,error,{},&scratch));
+            if(mode<4){QCOMPARE(scratch.featherScratchBytes,qsizetype(0));for(float value:far)QCOMPARE(value,invert?1.f:0.f);}
+            else {QVERIFY(scratch.featherScratchBytes>0);QVERIFY(far[0]>0);QVERIFY(far[0]<1);}
+        }
+        Mask separated;separated.feather=12;MaskComponent a;a.id="left";a.geometry=RadialGeometry{{50,32},10,10,0};
+        auto b=a;b.id="right";b.geometry=RadialGeometry{{970,32},10,10,0};separated.components={a,b};
+        const PreparedBrushMask mask(separated);MaskRasterScratch scratch;QVector<float> gap;
+        QVERIFY(mask.rasterize({{1026,64},size,{}},image,QRect(200,0,100,32),gap,error,{},&scratch));QCOMPARE(scratch.featherScratchBytes,qsizetype(0));for(float value:gap)QCOMPARE(value,0.f);
+        QVERIFY(std::isnan(mask.sample({1e300,0}))); // preserve the reference's invalid-query boundary
+    }
     void knownStepAndConstantPreservation(){
         const auto step=[](QPointF p){return p.x()>=2.5?1.f:0.f;};
         QCOMPARE(Detail::featherSample({.5,.5},2,step),0.f);

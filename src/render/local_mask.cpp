@@ -74,7 +74,19 @@ struct Stroke {
     }
 };
 }
-struct PreparedBrushMask::Impl {std::vector<Stroke> strokes;qsizetype bytes=0;double feather=0;bool invert=false,zeroMask=true;};
+struct PreparedBrushMask::Impl {
+    std::vector<Stroke> strokes;qsizetype bytes=0;double feather=0;
+    bool invert=false,zeroMask=true,finiteSupport=true;
+    Bounds positiveSupport; // only positive Add can expand the composed field
+    bool overlaps(const Bounds &query,double halo) const{
+        if(!finiteSupport)return true;
+        if(!positiveSupport.intersects(query,halo))return false;
+        // Keep gaps between distant Add components sparse as well.
+        for(const auto &stroke:strokes)if(stroke.operation==MaskOperation::Add&&stroke.strength>0&&
+            stroke.bounds.intersects(query,stroke.radius+halo))return true;
+        return false;
+    }
+};
 PreparedBrushMask::PreparedBrushMask(const Mask &mask){
     const BrushMaskReference check(mask);
     if(!check.valid()){problem=check.error();return;}
@@ -99,6 +111,13 @@ PreparedBrushMask::PreparedBrushMask(const Mask &mask){
             stroke.bounds.add(radial.center-QPointF(ex+pad,ey+pad));
             stroke.bounds.add(radial.center+QPointF(ex+pad,ey+pad));
         }
+        if(component.operation==MaskOperation::Add&&component.strength>0){
+            if(stroke.linear)prepared->finiteSupport=false;
+            else if(!stroke.bounds.empty){
+                prepared->positiveSupport.add({stroke.bounds.left-stroke.radius,stroke.bounds.top-stroke.radius});
+                prepared->positiveSupport.add({stroke.bounds.right+stroke.radius,stroke.bounds.bottom+stroke.radius});
+            }
+        }
         prepared->bytes+=stroke.points.capacity()*qsizetype(sizeof(QPointF))+qsizetype(sizeof(Stroke));
         prepared->strokes.push_back(std::move(stroke));
     }
@@ -108,7 +127,11 @@ qsizetype PreparedBrushMask::indexBytes() const{return impl?impl->bytes:0;}
 float PreparedBrushMask::sample(QPointF point,float alpha) const {
     if(!impl||!std::isfinite(alpha))return std::numeric_limits<float>::quiet_NaN();
     if(alpha<=1e-8f||!std::isfinite(point.x())||!std::isfinite(point.y()))return 0;
-    const float value=impl->zeroMask?0:impl->feather>0?
+    bool outside=false;
+    if(impl->feather>0&&impl->finiteSupport&&std::abs(point.x())<=1e9&&std::abs(point.y())<=1e9){
+        Bounds query;query.add(point);outside=!impl->overlaps(query,std::max(2.,impl->feather)+1);
+    }
+    const float value=impl->zeroMask||outside?0:impl->feather>0?
         Detail::featherSample(point,impl->feather,[this](QPointF p){return rawSample(p);}):rawSample(point);
     return impl->invert?1-value:value;
 }
@@ -158,11 +181,18 @@ bool PreparedBrushMask::rasterize(const MaskMapping &mapping,const QImage &alpha
         }
     }
     memory.mappingNs=timer.nsecsElapsed();
-    if(impl->feather>0&&!impl->zeroMask){
-        QVector<float> feathered;
-        if(!Detail::featherPoints(memory.points,memory.active,impl->feather,[this](QPointF p){return rawSample(p);},
-            feathered,error,cancel,&memory.featherScratchBytes))return false;
-        memory.values=std::move(feathered);result=memory.values.data();
+    if(impl->feather>0){
+        // A finite Add union bounds every positive composed value. Subtract
+        // cannot grow it; expand by source-kernel support before deciding zero.
+        // Skip whole tiles only: retained tiles keep the identical sweep/query
+        // origins and arithmetic, including their zero-valued neighbours.
+        const bool outside=!impl->overlaps(tileBounds,std::max(2.,impl->feather)+1);
+        if(!impl->zeroMask&&!outside){
+            QVector<float> feathered;
+            if(!Detail::featherPoints(memory.points,memory.active,impl->feather,[this](QPointF p){return rawSample(p);},
+                feathered,error,cancel,&memory.featherScratchBytes))return false;
+            memory.values=std::move(feathered);result=memory.values.data();
+        }
     }else for(const auto &stroke:impl->strokes){
         if(isCanceled(cancel)){error="Canceled";return false;}
         if(stroke.strength==0||(!stroke.linear&&!stroke.bounds.intersects(tileBounds,stroke.radius)))continue;

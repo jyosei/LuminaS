@@ -49,6 +49,7 @@ QPoint position(Canvas *canvas,double u,double v){
 }
 struct Entry {
     QString phase;EditTag tag;qint64 queued=0,photoKey=0,maskKey=0;
+    bool maskAlreadyVisible=false;
     double readyMs=-1,photoMs=-1,maskMs=-1,effectMs=0,maskComputeMs=0;
 };
 QJsonObject distribution(QVector<double> values){
@@ -75,7 +76,7 @@ int main(int argc,char **argv){
         auto *canvas=window.findChild<Canvas *>("photo-canvas");
         auto *loader=window.findChild<EditLoader *>();
         QMap<quint64,Entry> entries;QString phase="import";
-        quint64 latestQueued=0,latestReady=0; qint64 lastPhoto=0,latestCanonical=0;
+        quint64 latestQueued=0,latestReady=0; qint64 lastPhoto=0,latestCanonical=0,visibleMaskKey=0;
         QPointF pressedUv,lastMovedUv;bool sawPress=false,sawMove=false;
         if(!canvas||!loader||path.isEmpty()||before.isEmpty())error="Invalid source or missing native components";
         else {
@@ -94,6 +95,8 @@ int main(int argc,char **argv){
                 if(canvas->presenter()->canonicalImage().cacheKey()!=result.image.cacheKey())return;
                 auto &entry=entries[result.tag.job];entry.readyMs=(wall.nsecsElapsed()-entry.queued)/1e6;
                 entry.photoKey=result.image.cacheKey();entry.maskKey=result.localMask.cacheKey();
+                entry.maskAlreadyVisible=entry.maskKey!=0&&entry.maskKey==visibleMaskKey;
+                if(!result.view.localMaskVisible)visibleMaskKey=0;
                 entry.effectMs=result.effectElapsedMs;entry.maskComputeMs=result.maskElapsedMs;
                 latestReady=result.tag.job;latestCanonical=entry.photoKey;
             });
@@ -105,8 +108,9 @@ int main(int argc,char **argv){
                     if(i->photoKey==key&&i->photoMs<0){i->photoMs=(wall.nsecsElapsed()-i->queued)/1e6;break;}}
             });
             QObject::connect(canvas,&Canvas::localMaskPainted,&window,[&](qint64 key){
+                visibleMaskKey=key;
                 for(auto i=entries.end();i!=entries.begin();){--i;
-                    if(i->maskKey==key&&i->maskMs<0){i->maskMs=(wall.nsecsElapsed()-i->queued)/1e6;break;}}
+                    if(i->maskKey==key&&!i->maskAlreadyVisible&&i->maskMs<0){i->maskMs=(wall.nsecsElapsed()-i->queued)/1e6;break;}}
             });
             const auto idle=[&]{return latestQueued!=0&&latestReady==latestQueued&&lastPhoto==latestCanonical;};
             const auto settle=[&]{return waitFor(idle);};
@@ -170,22 +174,23 @@ int main(int argc,char **argv){
         }
         QJsonArray records;QJsonObject phases;
         for(const auto &name:{QString("brushOverlay"),QString("parameterOverlay"),QString("parameterPhotoOnly")}){
-            QVector<double> photos,masks,readies,effects,maskCompute;int requested=0;
+            QVector<double> photos,masks,readies,effects,maskCompute;int requested=0,reused=0;
             for(const auto &entry:entries)if(entry.phase==name){
                 ++requested;if(entry.photoMs>=0)photos.append(entry.photoMs);if(entry.maskMs>=0)masks.append(entry.maskMs);
+                if(entry.readyMs>=0&&entry.maskAlreadyVisible)++reused;
                 if(entry.readyMs>=0){readies.append(entry.readyMs);effects.append(entry.effectMs);maskCompute.append(entry.maskComputeMs);}
             }
             phases.insert(name,QJsonObject{{"requests",requested},{"notDelivered",requested-int(readies.size())},
                 {"deliveredNotPainted",int(readies.size()-photos.size())},{"photoPaint",distribution(photos)},
-                {"maskPaint",distribution(masks)},{"workerDelivery",distribution(readies)},
+                {"maskPaint",distribution(masks)},{"alreadyVisibleMaskDeliveries",reused},{"workerDelivery",distribution(readies)},
                 {"effectCompute",distribution(effects)},{"maskCompute",distribution(maskCompute)}});
             if(error.isEmpty()&&photos.isEmpty())error="No measured actual photo paint in "+name;
-            if(error.isEmpty()&&name!="parameterPhotoOnly"&&masks.isEmpty())error="No measured actual mask paint in "+name;
+            if(error.isEmpty()&&name!="parameterPhotoOnly"&&masks.isEmpty()&&reused==0)error="No actual or already-visible mask in "+name;
         }
         for(const auto &entry:entries)records.append(QJsonObject{{"job",QString::number(entry.tag.job)},
             {"phase",entry.phase},{"interactive",entry.tag.interactive},{"readyMs",entry.readyMs},
             {"photoMs",entry.photoMs},{"maskMs",entry.maskMs},{"photoKey",QString::number(entry.photoKey)},
-            {"maskKey",QString::number(entry.maskKey)}});
+            {"maskKey",QString::number(entry.maskKey)},{"maskAlreadyVisible",entry.maskAlreadyVisible}});
         report.insert("phases",phases);report.insert("jobs",records);
         report.insert("sourceUnchanged",fileHash(path)==before&&!before.isEmpty());
         if(error.isEmpty()&&!report.value("sourceUnchanged").toBool())error="Source changed";
