@@ -249,7 +249,7 @@ AdjustmentLayer makeLayer(const SourceFrame &frame, const QString &id = QStringL
     return layer;
 }
 
-PhotoDocument makeDocument(const SourceFrame &frame) {
+PhotoDocument makeDocument(const SourceFrame &frame,bool gradients=false) {
     PhotoDocument document;
     document.asset.id = QStringLiteral("replay-asset");
     document.asset.sourcePath = frame.path;
@@ -259,6 +259,14 @@ PhotoDocument makeDocument(const SourceFrame &frame) {
     document.asset.sourceFacts = frame.facts;
     document.global = Recipe{};
     document.layers = {makeLayer(frame)};
+    if(gradients){
+        const double w=frame.originalSize.width(),h=frame.originalSize.height();
+        MaskComponent line;line.id="probe-linear";line.strength=.35;
+        line.geometry=LinearGeometry{{w*.2,h*.25},{w*.8,h*.7}};
+        MaskComponent ellipse;ellipse.id="probe-radial";ellipse.strength=.2;ellipse.operation=MaskOperation::Subtract;
+        ellipse.geometry=RadialGeometry{{w*.55,h*.5},w*.28,h*.18,27};
+        document.layers[0].mask.components.append(line);document.layers[0].mask.components.append(ellipse);
+    }
     return document;
 }
 
@@ -271,11 +279,12 @@ int main(int argc, char **argv) {
     const QStringList args = app.arguments();
     QImageReader::setAllocationLimit(256);
 
-    if (args.size() != 2) {
-        emitReport(fail(QStringLiteral("usage: local-replay-probe <source> | --synthetic45")));
+    if ((args.size()!=2&&args.size()!=3)||(args.size()==3&&args[2]!="--gradients")) {
+        emitReport(fail(QStringLiteral("usage: local-replay-probe <source|--synthetic45> [--gradients]")));
         return 2;
     }
     const QString argument = args[1];
+    const bool gradients=args.size()==3;
     const bool synthetic = argument == QStringLiteral("--synthetic45");
     if (!synthetic && argument.startsWith(QLatin1Char('-'))) {
         emitReport(fail(QStringLiteral("unknown option")));
@@ -296,7 +305,7 @@ int main(int argc, char **argv) {
         report = QJsonObject{{QStringLiteral("mode"), QStringLiteral("synthetic45")},
                              {QStringLiteral("sourceSha256"), frame.sha256}};
         QJsonObject caseResult;
-        const bool pass = runCase(frame, makeDocument(frame), caseResult);
+        const bool pass = runCase(frame, makeDocument(frame,gradients), caseResult);
         report.insert(QStringLiteral("cases"), QJsonArray{caseResult});
         report.insert(QStringLiteral("pass"), pass);
         if (caseResult.contains(QStringLiteral("error")))
@@ -315,8 +324,8 @@ int main(int argc, char **argv) {
                              {QStringLiteral("height"), frame.linear.height()},
                              {QStringLiteral("format"), QString::number(int(frame.linear.format()))}};
         QJsonObject identity, combined;
-        const bool identityPass = runCase(frame, makeDocument(frame), identity);
-        PhotoDocument combinedDocument = makeDocument(frame);
+        const bool identityPass = runCase(frame, makeDocument(frame,gradients), identity);
+        PhotoDocument combinedDocument = makeDocument(frame,gradients);
         combinedDocument.global.crop = QRectF(.08, .07, .84, .86);
         combinedDocument.global.angle = 9;
         combinedDocument.global.perspective = QPointF(.025, -.02);
@@ -344,6 +353,7 @@ int main(int argc, char **argv) {
 #endif
 
     const bool ok = report.value(QStringLiteral("pass")).toBool();
+    report.insert("gradients",gradients);
     if(!ok&&!report.contains("error"))report.insert("error","Replay numerical or dimension check failed");
     report.insert(QStringLiteral("ok"), ok);
     emitReport(report);

@@ -567,6 +567,9 @@ bool documentFromJsonBody(const QJsonObject &json,PhotoDocument &document,bool r
 
 }
 
+bool LocalEdit::validateMaskGeometry(const MaskGeometry &geometry,QString &error){
+    error.clear();return validMaskGeometry(geometry,error);
+}
 bool LocalEdit::validDocument(const PhotoDocument &document,QString &error,bool requireSourceIdentity){
     error.clear();
     QString reason;

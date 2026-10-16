@@ -73,6 +73,8 @@ struct PhotoDocument {
 using DocumentSnapshot=std::shared_ptr<const PhotoDocument>;
 
 bool validDocument(const PhotoDocument &document,QString &error,bool requireSourceIdentity=false);
+// Shared record validation for tools/renderers; does not sample image pixels.
+bool validateMaskGeometry(const MaskGeometry &geometry,QString &error);
 QJsonObject documentJson(const PhotoDocument &document,QString &error);
 bool documentFromJson(const QJsonObject &json,PhotoDocument &document,QString &error,bool requireSourceIdentity=false);
 bool documentFromLegacyRecipe(const AssetIdentity &asset,const QJsonObject &recipe,PhotoDocument &document,QString &error);

@@ -217,22 +217,26 @@ void LocalReferenceTests::maskAlphaCoverageAndUnsupported(){
     QVERIFY(std::isnan(double(reference.sample(QPointF(100,100),
         std::numeric_limits<float>::quiet_NaN()))));
 
-    // Unsupported node kinds must fail loudly, never validate silently.
+    // C3 supports well-formed gradient nodes, while malformed/spatial nodes
+    // still fail explicitly instead of silently producing an empty mask.
     LocalEdit::Mask linear;
     LocalEdit::MaskComponent linearComponent;
     linearComponent.id="linear";
     linearComponent.geometry=LocalEdit::LinearGeometry{QPointF(0,0),QPointF(1,0)};
     linear.components.append(linearComponent);
     LocalEdit::BrushMaskReference linearReference(linear);
-    QVERIFY(!linearReference.valid());
-    QVERIFY(!linearReference.error().isEmpty());
+    QVERIFY(linearReference.valid());
+    QCOMPARE(linearReference.sample({.5,0}),.5f);
+    auto degenerate=linear;degenerate.components[0].geometry=LocalEdit::LinearGeometry{{0,0},{0,0}};
+    QVERIFY(!LocalEdit::BrushMaskReference(degenerate).valid());
 
     LocalEdit::Mask radial;
     LocalEdit::MaskComponent radialComponent;
     radialComponent.id="radial";
     radialComponent.geometry=LocalEdit::RadialGeometry{};
     radial.components.append(radialComponent);
-    QVERIFY(!LocalEdit::BrushMaskReference(radial).valid());
+    QVERIFY(LocalEdit::BrushMaskReference(radial).valid());
+    QCOMPARE(LocalEdit::BrushMaskReference(radial).sample({0,0}),1.f);
 
     LocalEdit::Mask feathered=mask;
     feathered.feather=.5;

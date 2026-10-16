@@ -2,6 +2,7 @@
 #include "cpu_renderer.h"
 #include "tone_operator.h"
 #include "local_mask_math.h"
+#include "local_gradient_math.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -64,9 +65,11 @@ BrushMaskReference::BrushMaskReference(Mask value):mask(std::move(value)){
         if(component.id.isEmpty()||component.id.size()>128||ids.contains(component.id)||
            !std::isfinite(component.strength)||component.strength<0||component.strength>1||
            (component.operation!=MaskOperation::Add&&component.operation!=MaskOperation::Subtract)||
-           !brush||!validHead(brush->radius,brush->hardness)||brush->points.isEmpty()||
-           brush->points.size()>maximumPointsPerStroke){problem="Invalid/unsupported brush component";return;}
-        ids.insert(component.id);count+=brush->points.size();
+           (brush&&(!validHead(brush->radius,brush->hardness)||brush->points.isEmpty()||
+           brush->points.size()>maximumPointsPerStroke))){problem="Invalid mask component";return;}
+        if(!brush&&!validateMaskGeometry(component.geometry,problem))return;
+        ids.insert(component.id);if(!brush)continue;
+        count+=brush->points.size();
         if(count>maximumPointsPerDocument){problem="Brush mask exceeds point budget";return;}
         for(const auto &point:brush->points)if(!validPoint(point)){problem="Invalid brush point";return;}
     }
@@ -77,9 +80,11 @@ float BrushMaskReference::sample(QPointF point,float alpha) const {
     float coverage=0;
     for(const auto &component:mask.components){
         if(component.strength==0)continue;
-        const auto &brush=std::get<BrushGeometry>(component.geometry);
         float maximum=0;
-        for(const auto &center:brush.points){maximum=std::max(maximum,headCoverage(point,center,brush));if(maximum==1)break;}
+        if(const auto *brush=std::get_if<BrushGeometry>(&component.geometry)){
+            for(const auto &center:brush->points){maximum=std::max(maximum,headCoverage(point,center,*brush));if(maximum==1)break;}
+        }else if(const auto *linear=std::get_if<LinearGeometry>(&component.geometry))maximum=Detail::linearGradientCoverage(*linear,point);
+        else maximum=Detail::radialGradientCoverage(std::get<RadialGeometry>(component.geometry),point);
         const float amount=maximum*float(component.strength);
         coverage=component.operation==MaskOperation::Add?coverage+(1-coverage)*amount:coverage*(1-amount);
     }

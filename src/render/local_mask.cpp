@@ -1,5 +1,6 @@
 #include "local_mask.h"
 #include "local_mask_math.h"
+#include "local_gradient_math.h"
 #include "geometry_transform.h"
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <optional>
 
 namespace LocalEdit {
 namespace {
@@ -28,7 +30,10 @@ struct Bounds {
 struct Stroke {
     QVector<QPointF> points;
     Bounds bounds;
-    double radius,hardness;
+    double radius=0,hardness=0;
+    std::optional<LinearGeometry> linear;
+    std::optional<RadialGeometry> radial;
+    double co=1,si=0;
     float strength;
     MaskOperation operation;
     void build(int first,int end,int axis){
@@ -58,6 +63,9 @@ struct Stroke {
         }
     }
     float amount(QPointF p) const {
+        if(strength==0)return 0;
+        if(linear)return Detail::linearGradientCoverage(*linear,p)*strength;
+        if(radial)return Detail::radialGradientCoverage(*radial,p,co,si)*strength;
         if(strength==0||!bounds.contains(p,radius))return 0;
         double distance=radius;
         nearest(p,0,int(points.size()),0,distance);
@@ -71,11 +79,23 @@ PreparedBrushMask::PreparedBrushMask(const Mask &mask){
     if(!check.valid()){problem=check.error();return;}
     auto prepared=std::make_shared<Impl>();prepared->strokes.reserve(mask.components.size());
     for(const auto &component:mask.components){
-        const auto &geometry=std::get<BrushGeometry>(component.geometry);
-        Stroke stroke;stroke.points=geometry.points;stroke.radius=geometry.radius;stroke.hardness=geometry.hardness;
+        Stroke stroke;
         stroke.strength=float(component.strength);stroke.operation=component.operation;
-        for(const auto &point:geometry.points)stroke.bounds.add(point);
-        stroke.build(0,int(stroke.points.size()),0);
+        if(const auto *geometry=std::get_if<BrushGeometry>(&component.geometry)){
+            stroke.points=geometry->points;stroke.radius=geometry->radius;stroke.hardness=geometry->hardness;
+            for(const auto &point:geometry->points)stroke.bounds.add(point);
+            stroke.build(0,int(stroke.points.size()),0);
+        }else if(const auto *linear=std::get_if<LinearGeometry>(&component.geometry))stroke.linear=*linear;
+        else {
+            const auto radial=std::get<RadialGeometry>(component.geometry);stroke.radial=radial;
+            const double angle=radial.angleDegrees*3.14159265358979323846/180;
+            stroke.co=std::cos(angle);stroke.si=std::sin(angle);
+            const double ex=std::hypot(radial.radiusX*stroke.co,radial.radiusY*stroke.si);
+            const double ey=std::hypot(radial.radiusX*stroke.si,radial.radiusY*stroke.co);
+            const double pad=8*std::numeric_limits<double>::epsilon()*(1+std::abs(radial.center.x())+std::abs(radial.center.y())+radial.radiusX+radial.radiusY);
+            stroke.bounds.add(radial.center-QPointF(ex+pad,ey+pad));
+            stroke.bounds.add(radial.center+QPointF(ex+pad,ey+pad));
+        }
         prepared->bytes+=stroke.points.capacity()*qsizetype(sizeof(QPointF))+qsizetype(sizeof(Stroke));
         prepared->strokes.push_back(std::move(stroke));
     }
@@ -132,7 +152,7 @@ bool PreparedBrushMask::rasterize(const MaskMapping &mapping,const QImage &alpha
     memory.mappingNs=timer.nsecsElapsed();
     for(const auto &stroke:impl->strokes){
         if(isCanceled(cancel)){error="Canceled";return false;}
-        if(stroke.strength==0||!stroke.bounds.intersects(tileBounds,stroke.radius))continue;
+        if(stroke.strength==0||(!stroke.linear&&!stroke.bounds.intersects(tileBounds,stroke.radius)))continue;
         for(qsizetype i=0;i<count;++i)if(active[i]){
             const float a=stroke.amount(points[i]);
             result[i]=stroke.operation==MaskOperation::Add?result[i]+(1-result[i])*a:result[i]*(1-a);

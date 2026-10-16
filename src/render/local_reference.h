@@ -24,6 +24,7 @@ struct MaskMapping {
     QSize sourceSize,outputSize;
     Recipe geometry; // original full recipe, even if the working frame is prepared
 };
+// Scalar brush/linear/radial reference; historical name kept for callers.
 class BrushMaskReference {
 public:
     explicit BrushMaskReference(Mask mask);

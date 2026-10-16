@@ -18,8 +18,9 @@ private:
     QVector<quint8> active;
     QVector<float> values;
 };
-// Immutable balanced point index. A brush maximum is the head weight at the
-// nearest stamp; composition order still follows the original mask record.
+// Historical class name retained. Brushes use an immutable balanced point
+// index; C3 gradients use analytic coverage and radial support bounds. A brush
+// maximum is the nearest-stamp weight; all component order remains unchanged.
 class PreparedBrushMask {
 public:
     explicit PreparedBrushMask(const Mask &mask);

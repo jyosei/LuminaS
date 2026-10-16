@@ -107,8 +107,7 @@ MaskComponent brush(const QVector<QPointF> &points,double radius,double hardness
     Q_ASSERT(g.hardness>=0.0&&g.hardness<=1.0);
     return c;
 }
-// Unsupported nodes are still well formed, so rejection can only come from the
-// unsupported kind itself and not from a malformed sample.
+// Well-formed gradient fixtures for mixed-component composition.
 MaskComponent linearComponent(const QPointF &start,const QPointF &end,double strength,MaskOperation op){
     MaskComponent c;
     static quint64 sequence=0;
@@ -437,7 +436,7 @@ void LocalMaskTests::edgeCasesAndUnsupportedGeometry(){
         for(float v:actual)QCOMPARE(bits(v),bits(0.0f));
     }
     {
-        // Unsupported: a well formed linear node, then feather, then invert.
+        // C3 gradients are supported; whole-mask feather/invert remain C4.
         Mask unsupported;
         unsupported.components.append(linearComponent(QPointF(10,10),QPointF(50,40),0.5,MaskOperation::Add));
         unsupported.components.append(radialComponent(QPointF(30,20),12.0,9.0,15.0,0.7,MaskOperation::Subtract));
@@ -446,12 +445,11 @@ void LocalMaskTests::edgeCasesAndUnsupportedGeometry(){
         QVERIFY(unsupported.components[0].id!=unsupported.components[1].id);
         BrushMaskReference referenceUnsupported(unsupported);
         PreparedBrushMask preparedUnsupported(unsupported);
-        QVERIFY(!referenceUnsupported.valid());
-        QVERIFY(!referenceUnsupported.error().isEmpty());
-        QVERIFY(!preparedUnsupported.valid());
-        QVERIFY(!preparedUnsupported.error().isEmpty());
-        QVERIFY(std::isnan(preparedUnsupported.sample(QPointF(30,20),1.0f)));
-        QVERIFY(std::isnan(referenceUnsupported.sample(QPointF(30,20),1.0f)));
+        QVERIFY(referenceUnsupported.valid());
+        QVERIFY(referenceUnsupported.error().isEmpty());
+        QVERIFY(preparedUnsupported.valid());
+        QVERIFY(preparedUnsupported.error().isEmpty());
+        QCOMPARE(preparedUnsupported.sample(QPointF(30,20),1.0f),referenceUnsupported.sample(QPointF(30,20),1.0f));
 
         Mask feathered=transparent;
         feathered.feather=0.2;
@@ -477,8 +475,11 @@ void LocalMaskTests::edgeCasesAndUnsupportedGeometry(){
         // An invalid prepared record must also refuse to rasterize.
         QVector<float> guarded=sentinel(qsizetype(frame.width())*frame.height());
         QString error;
-        QVERIFY(!preparedUnsupported.rasterize(mapping,alphaFrame(output,1.0f),frame,guarded,error));
+        const auto before=guarded;
+        QVERIFY(!preparedFeather.rasterize(mapping,alphaFrame(output,1.0f),frame,guarded,error));
         QVERIFY(!error.isEmpty());
+        QCOMPARE(guarded.size(),before.size());
+        QVERIFY(std::memcmp(guarded.constData(),before.constData(),size_t(before.size())*sizeof(float))==0);
     }
 }
 // Two strokes of 50 points near the centre, source 1026x514, output 513x257,
