@@ -27,11 +27,9 @@ struct LocalPipeline {
         pipeline.reset(rhi->newComputePipeline());pipeline->setShaderStage({QRhiShaderStage::Compute,shader});pipeline->setShaderResourceBindings(bindings.get());
         require(pipeline->create(),"Local GPU pipeline failed");
     }
-    QJsonObject dispatch(const QImage &source,const QVector<float> &mask,const LocalEdit::LocalParameters &p,
-        float opacity,bool upload,bool readback,QByteArray *pixels=nullptr){
+    void record(QRhiCommandBuffer *cb,const QImage &source,const QVector<float> &mask,
+        const LocalEdit::LocalParameters &p,float opacity,bool upload){
         require(mask.size()==qsizetype(source.width())*source.height(),"Local mask size mismatch");
-        QElapsedTimer timer;timer.start();QRhiCommandBuffer *cb=nullptr;
-        require(rhi->beginOffscreenFrame(&cb)==QRhi::FrameOpSuccess,"Local begin failed");
         auto *updates=rhi->nextResourceUpdateBatch();
         const bool tonal=p.highlights!=0||p.shadows!=0||p.whites!=0||p.blacks!=0;
         const float values[]{float(std::exp2(p.warmth)),float(std::exp2(p.tint)),float(std::exp2(-p.warmth)),float(std::exp2(p.exposure)),
@@ -54,6 +52,12 @@ struct LocalPipeline {
         }
         cb->beginComputePass(updates);cb->setComputePipeline(pipeline.get());cb->setShaderResources();
         cb->dispatch((source.width()+15)/16,(source.height()+15)/16,1);cb->endComputePass();
+    }
+    QJsonObject dispatch(const QImage &source,const QVector<float> &mask,const LocalEdit::LocalParameters &p,
+        float opacity,bool upload,bool readback,QByteArray *pixels=nullptr){
+        QElapsedTimer timer;timer.start();QRhiCommandBuffer *cb=nullptr;
+        require(rhi->beginOffscreenFrame(&cb)==QRhi::FrameOpSuccess,"Local begin failed");
+        record(cb,source,mask,p,opacity,upload);
         QRhiReadbackResult result;bool completed=false;
         if(readback){result.completed=[&]{completed=true;};auto *batch=rhi->nextResourceUpdateBatch();
             batch->readBackTexture(QRhiReadbackDescription(output.get()),&result);cb->resourceUpdate(batch);}
@@ -64,11 +68,23 @@ struct LocalPipeline {
         return {{"totalMs",elapsed(timer)},{"enqueueMs",enqueued},{"gpuTimestampMs",cb->lastCompletedGpuTime()*1000}};
     }
 };
+LocalEdit::Mask residentMask(QSize size){
+    using namespace LocalEdit;Mask mask;MaskComponent component;component.id="resident-radial";
+    component.geometry=RadialGeometry{{size.width()*.5,size.height()*.5},size.width()*.3,size.height()*.3,23};
+    mask.components={component};mask.feather=2.3;return mask;
+}
+LocalEdit::LocalParameters nativeLocalParameters(const Recipe &recipe){
+    return {recipe.exposure,.2,-.3,.4,.2,-.2,.15,-.1,recipe.saturation};
+}
+LocalEdit::PhotoDocument nativeLocalDocument(const SourceFrame &s,const Recipe &recipe){
+    using namespace LocalEdit;PhotoDocument d;d.asset.id="resident-asset";d.asset.sourcePath=s.path;
+    d.asset.sourceHash=s.sha256;d.asset.normalizedSize=s.originalSize;d.asset.raw=s.raw;
+    AdjustmentLayer layer;layer.id="resident-layer";layer.mask=residentMask(s.linear.size());
+    layer.opacity=.65;layer.parameters=nativeLocalParameters(recipe);d.layers={layer};return d;
+}
 QJsonObject runLocalExperiment(QRhi *rhi,QSize size,int iterations){
     using namespace LocalEdit;
-    auto s=synthetic(size);Mask mask;MaskComponent component;component.id="resident-radial";
-    component.geometry=RadialGeometry{{size.width()*.5,size.height()*.5},size.width()*.3,size.height()*.3,23};
-    mask.components={component};mask.feather=2.3;
+    auto s=synthetic(size);const auto mask=residentMask(size);
     const PreparedBrushMask prepared(mask);QString error;QVector<float> coverage;
     require(rasterizeMaskPreview(prepared,{size,size,{}},s.linear,coverage,error),"CPU mask preparation failed");
     LocalPipeline pipeline(rhi,size);LocalParameters mixed{.7,.2,-.3,.4,.2,-.2,.15,-.1,.75};

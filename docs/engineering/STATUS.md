@@ -1,5 +1,7 @@
 # 工程进度
 
+2026-10-16 GPU常驻原生：隔离G3单层九参数接入QRhiWidget，4K/DPR1.25、5预热+100次更新通过；最终更新到frameSubmitted median21.98ms/p95 25.65ms，CPU暖缓存更新到paint完成211.18/231.38ms（终点不同，不宣称体感提速倍数）。最终颜色缓冲对CPU最大差1码值，输入/蒙版各上传一次，epoch105/105匹配，CPU缓存builds2/hits210。旧基础窗口与离屏局部回归通过；QA图片0。证据GPU-LOCAL-NATIVE-RESULTS.md。继续多层/ICC、C6实照与D；生产CPU保持，完整61项60通过和偶发反馈/atomic_file限制不变，无包/推送。
+
 2026-10-16 C6/GPU混合更新：新增16组合（JPEG/合成RAW）串行参考/多层顺序/缓存/冻结专项18 passed；全部目标重建exit0，完整61项60通过（362.19秒），唯一色差拖动只出现1中间帧失败，独立复测2/2通过不视为定位修复，原生/真实组合继续补。按用户方向新增隔离G3九项局部参数常驻GPU实验，4K基础帧/蒙版各上传1次，100次测量CPU四线程+复制median约148–151ms、GPU约16–23ms，5组数值/alpha通过；不含ICC/原生显示，不切生产后端。设备销毁后私有提交约212MiB，纹理销毁/trim不足以立即释放驱动段。见S3-C6-COMBINATIONS-RESULTS.md与GPU-LOCAL-ROUND2-RESULTS.md；下一步原生GPU呈现/多层及C6实照组合，C/D、可靠性和交互缺口仍保留。无图像输出/包/推送。
 
 2026-10-16 C5缓存依赖复核：复现并修复显式X/Y支持存在时遗漏旧版整体空间滤波尺度的基础帧key，修复前实际像素断言失败、修复后通过。10类源依赖矩阵缓存/无缓存精确一致、暖调用不重建；相关3/3（1.09秒），renderer/cache/loader分别12/24/5 passed含init/cleanup，生产目标构建exit0。见S3-C5-DEPENDENCIES-RESULTS.md；进入C6组合，保留性能优化方向与33/100ms缺口；C/D、完整60项和atomic_file问题仍未收口，无图像输出/包/推送。

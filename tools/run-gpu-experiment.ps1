@@ -24,11 +24,25 @@ param(
     [ValidateRange(100, 1000)][int]$Iterations = 100,
     [ValidateSet('small', '4k', '24mp', '45mp')][string]$Size = '4k',
     [switch]$CapabilitiesOnly,
-    [switch]$Present
+    [switch]$Present,
+    [switch]$Local,
+    [switch]$LocalPresent
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+
+$modeCount = 0
+foreach ($modeFlag in @($CapabilitiesOnly, $Present, $Local, $LocalPresent)) {
+    if ($modeFlag) { ++$modeCount }
+}
+if ($modeCount -gt 1) { throw 'Choose only one experiment mode.' }
+if (($Present -or $LocalPresent) -and $Size -ne '4k') {
+    throw 'Native presentation requires Size 4k.'
+}
+if ($Local -and $Size -notin @('small', '4k')) {
+    throw 'The local compute experiment accepts only small or 4k.'
+}
 
 $script:ProbeTimeoutSeconds = 900
 $script:EvidenceNames = @('hardware.json', 'report.json', 'stdout.txt', 'stderr.txt', 'process.json')
@@ -254,7 +268,8 @@ Initialize-ReportDirectory -ReportDirectory $reportDir
 
 $sourceManifest = @('CMakeLists.txt', 'tools/run-gpu-experiment.ps1',
     'tools/gpu-probe/main.cpp', 'tools/gpu-probe/presentation.inc',
-    'tools/gpu-probe/basic.comp', 'tools/gpu-probe/present.vert',
+    'tools/gpu-probe/basic.comp', 'tools/gpu-probe/local.comp',
+    'tools/gpu-probe/local.inc', 'tools/gpu-probe/present.vert',
     'tools/gpu-probe/present.frag', 'build/dev/gpu_probe.exe') | ForEach-Object {
     $manifestPath = Join-Path $workspaceRoot $_
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash }
@@ -276,6 +291,8 @@ $probeArguments = @(
 )
 if ($CapabilitiesOnly) { $probeArguments += '--capabilities-only' }
 if ($Present) { $probeArguments += '--present' }
+if ($Local) { $probeArguments += '--local' }
+if ($LocalPresent) { $probeArguments += '--local-present' }
 
 $startupUtc = [System.DateTime]::UtcNow.ToString('o')
 $result = Invoke-GpuProbe -Executable $probePath -Arguments $probeArguments -WorkingDirectory $workspaceRoot `
@@ -294,6 +311,8 @@ $processRecord = [ordered]@{
     stderr         = $stderrPath
     capabilitiesOnly = [bool]$CapabilitiesOnly
     present        = [bool]$Present
+    local          = [bool]$Local
+    localPresent   = [bool]$LocalPresent
     iterations     = $Iterations
     size           = $Size
 }
