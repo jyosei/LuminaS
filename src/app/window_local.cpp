@@ -149,7 +149,10 @@ void Window::editLocalParameters(const QString &id,LocalEdit::LocalParameters pa
 void Window::finishLocalEdits(bool canceled){
     if(localFinishing||(!brushTransaction.active()&&!localParameterDraft))return;
     const QScopedValueRollback<bool> guard(localFinishing,true);
-    if(canvas->brushGestureActive())canvas->finishBrushGesture(canceled);
+    // The canvas emits brushPressed after opening its gesture. Flushing a
+    // preceding parameter draft at that point must not close this new gesture;
+    // it belongs to a brush transaction only once beginLocalBrush creates one.
+    if(brushTransaction.active()&&canvas->brushGestureActive())canvas->finishBrushGesture(canceled);
     QString error;LocalEdit::DocumentSnapshot candidate;
     if(current>=0){
         const auto committed=history.snapshot(photos[current].path);

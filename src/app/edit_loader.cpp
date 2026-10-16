@@ -133,6 +133,10 @@ void EditLoader::queueRequest(const QString &path,const Recipe &recipe,EditTag t
     if(closing)return;
     // Invalidate old delivery before requesting cancellation; never revoke its buffers.
     latest=tag;latestPath=path;latestRecipe=recipe;latestView=view;hasCurrentRequest=true;
+    emit requestQueued(path,tag);
+    // A synchronous diagnostic observer may invalidate or replace the request.
+    // Do not let this outer enqueue overwrite that newer state.
+    if(closing||!hasCurrentRequest||latest!=tag||latestPath!=path)return;
     pending.reset();livePending.reset();Request next{path,recipe,tag};next.view=view;next.document=std::move(document);
     if(currentRequest&&!compatible(*currentRequest,next))currentCancel.cancel();
     if(liveRequest&&!compatible(*liveRequest,next))liveCancel.cancel();

@@ -39,6 +39,29 @@ QString sample(QTemporaryDir &directory,QString name){
 class LocalWindowTests:public QObject {
     Q_OBJECT
 private slots:
+    void pendingParameterCommitDoesNotEndNewBrushPress(){
+        QTemporaryDir directory;const auto path=sample(directory,"pending-parameter.jpg");QVERIFY(!path.isEmpty());
+        Window window(nullptr,QStringLiteral(""));auto *canvas=window.findChild<Canvas *>("photo-canvas");QVERIFY(canvas);
+        canvas->setMonitorProfile({},"pending-parameter-test");QSignalSpy painted(canvas,&Canvas::canonicalFramePainted);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.addFiles({path});
+        QVERIFY(waitFor([&]{return ready(window,canvas,painted);}));
+        window.findChild<QTabWidget *>("adjustment-scope-tabs")->setCurrentIndex(1);
+        painted.clear();QTest::mouseClick(window.findChild<QPushButton *>("local-new-brush"),Qt::LeftButton);
+        QVERIFY(waitFor([&]{return ready(window,canvas,painted)&&canvas->brushMode();}));
+        window.findChild<QDoubleSpinBox *>("local-radius")->setValue(8);
+        // No editingFinished yet: beginning the brush must flush the parameter
+        // draft, without closing the canvas gesture that just emitted press.
+        window.findChild<QSlider *>("slider-local-exposure")->setValue(40);
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,point(canvas,.3,.5));
+        QVERIFY(canvas->brushGestureActive());
+        move(canvas,point(canvas,.7,.5));QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,point(canvas,.7,.5));
+        auto document=window.currentPhotoDocument();QVERIFY(document);QCOMPARE(document->layers[0].parameters.exposure,.4);
+        QCOMPARE(document->layers[0].mask.components.size(),1);
+        QVERIFY(std::get<LocalEdit::BrushGeometry>(document->layers[0].mask.components[0].geometry).points.size()>2);
+        window.undoEdit();document=window.currentPhotoDocument();
+        QVERIFY(document->layers[0].mask.components.isEmpty());QCOMPARE(document->layers[0].parameters.exposure,.4);
+        window.undoEdit();QCOMPARE(window.currentPhotoDocument()->layers[0].parameters.exposure,0.);
+    }
     void brushHistoryParametersAndCancel(){
         QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=sample(directory,"brush.jpg");QVERIFY(!path.isEmpty());
         Window window(nullptr,QStringLiteral(""));auto *canvas=window.findChild<Canvas *>("photo-canvas");QVERIFY(canvas);

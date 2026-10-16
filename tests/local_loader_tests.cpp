@@ -25,11 +25,24 @@ PhotoDocument document(const EditResult &prepared){
 class LocalLoaderTests:public QObject {
     Q_OBJECT
 private slots:
+    void queueObserverCanReplaceRequest(){
+        QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("queue.jpg");
+        QImage input(64,48,QImage::Format_RGB32);input.fill(Qt::gray);QVERIFY(input.save(path));
+        EditLoader loader;QSignalSpy ready(&loader,&EditLoader::ready),queued(&loader,&EditLoader::requestQueued);
+        connect(&loader,&EditLoader::requestQueued,&loader,[&](const QString &source,EditTag tag){
+            if(tag.job==1){tag.job=2;Recipe next;next.exposure=.5;loader.request(source,next,tag);}
+        });
+        EditTag tag;tag.session=5;tag.job=1;loader.request(path,{},tag);
+        QCOMPARE(queued.size(),2);QTRY_COMPARE_WITH_TIMEOUT(ready.size(),1,15000);
+        const auto result=qvariant_cast<EditResult>(ready.last()[0]);QVERIFY2(result.error.isEmpty(),qPrintable(result.error));
+        QCOMPARE(result.tag.job,quint64(2));QCOMPARE(result.recipe.exposure,.5);
+    }
     void frozenDocumentFeedsActualPreview(){
         QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("synthetic.jpg");
         QImage input(96,64,QImage::Format_RGB32);input.fill(QColor(70,90,110));QVERIFY(input.save(path,"JPEG",98));
-        EditLoader loader;QSignalSpy ready(&loader,&EditLoader::ready);
+        EditLoader loader;QSignalSpy ready(&loader,&EditLoader::ready),queued(&loader,&EditLoader::requestQueued);
         EditTag tag;tag.session=42;tag.revision=1;tag.job=1;loader.request(path,{},tag);
+        QCOMPARE(queued.size(),1);QCOMPARE(queued.last()[0].toString(),path);QCOMPARE(qvariant_cast<EditTag>(queued.last()[1]),tag);
         QTRY_VERIFY_WITH_TIMEOUT(ready.size()==1,15000);
         const auto initial=qvariant_cast<EditResult>(ready.takeFirst().at(0));
         QVERIFY2(initial.error.isEmpty(),qPrintable(initial.error));QVERIFY(!initial.workFrame.linear.isNull());
@@ -53,7 +66,9 @@ private slots:
         QVERIFY2(interactive.error.isEmpty(),qPrintable(interactive.error));QVERIFY(!interactive.sourceRebuilt);
         QCOMPARE(hash(interactive.image),hash(renderDocumentPreview(initial.workFrame,*live,live->global).image));
         auto invalid=std::make_shared<PhotoDocument>(*live);invalid->asset.sourcePath="wrong-path";
+        const auto beforeInvalid=queued.size();
         QVERIFY(!loader.requestDocument(path,invalid,tag,error));QVERIFY(!error.isEmpty());
+        QCOMPARE(queued.size(),beforeInvalid);
     }
     void supersededLocalResultCannotCommit(){
         QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("gate.jpg");

@@ -43,6 +43,9 @@ public:
     void cancelPointColorSample(){++pointSampleGeneration;}
     void invalidate();
 signals:
+    // Diagnostic enqueue point, on the GUI thread and before worker dispatch.
+    // Paired with actual frame provenance; ready is not proof of a screen paint.
+    void requestQueued(const QString &path,EditTag tag);
     void pointColorSampleStateChanged();
     void pointColorSampled(const QString &path,EditTag tag,PointColorAdjustment point,const QString &error);
     void ready(const EditResult &result);
