@@ -1,6 +1,6 @@
 # LuminaS 构建：S2 / 4K缓存编辑
 
-2026-10-16 S3 存储基础增加 Qt6::Sql；现有 Qt 6.8.3 SDK 已包含该模块及 `plugins/sqldrivers/qsqlite.dll`，无需另装数据库服务。开发运行须能找到同版本 Qt bin 与插件目录。最新完整回归39/39，数据基础见 S3-A3-RESULTS.md；保存窗口尚未接入。CTest 为每个 QtTest 保留一份最新文本结果 `build/dev/test-logs/<测试名>.txt`，Windows 无 stdout 时也可定位失败；重复运行覆盖该文本，不积累图像。
+2026-10-16 S3 存储基础增加 Qt6::Sql；现有 Qt 6.8.3 SDK 已包含该模块及 `plugins/sqldrivers/qsqlite.dll`，无需另装数据库服务。开发运行须能找到同版本 Qt bin 与插件目录。最新完整回归62/62（374.63秒），局部组合和显式裁切约束见 S3-CROP-CONSTRAINT-RESULTS.md，存储数据基础见 S3-A3-RESULTS.md；保存窗口尚未接入。CTest 为每个 QtTest 保留一份最新文本结果 `build/dev/test-logs/<测试名>.txt`，Windows 无 stdout 时也可定位失败；重复运行覆盖该文本，不积累图像。
 
 2026-10-15 GPU 首轮实验是独立可选目标，生产后端仍为 CPU。需要额外安装与 Qt 匹配的 Shader Tools 6.8.3（含 qsb），再执行 `cmake --preset dev -DLUMINA_BUILD_GPU_EXPERIMENT=ON` 和常规 `./tools/dev.ps1 build`。默认选项为 OFF，不开启时不需要 Shader Tools。运行 `./tools/run-gpu-experiment.ps1 -ReportDirectory build/private-qa/gpu-new -Size 4k`，或另用新目录加 `-Present` 测试独立原生画布；目录必须为空且位于 build 内。结果与未验证项见 [首轮 GPU 实验](GPU-EXPERIMENT-ROUND1-RESULTS.md)。不生成桌面包。
 

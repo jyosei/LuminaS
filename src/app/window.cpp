@@ -35,6 +35,7 @@
 #include "export_dialog.h"
 #include "local_adjustment_panel.h"
 #include <QTabWidget>
+#include "render/crop_constraint.h"
 
 Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(parent) {
     editor=new EditLoader(this);
@@ -199,9 +200,10 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     auto *flips=new QWidget;auto *flipLine=new QHBoxLayout(flips);flipLine->setContentsMargins(0,0,0,0);flipHorizontal=new QPushButton(QStringLiteral("水平翻转"));flipHorizontal->setObjectName("flip-horizontal");flipVertical=new QPushButton(QStringLiteral("垂直翻转"));flipVertical->setObjectName("flip-vertical");for(auto *b:{flipHorizontal,flipVertical}){b->setCheckable(true);flipLine->addWidget(b);}form->addRow(flips);connect(flipHorizontal,&QPushButton::clicked,this,[this](bool enabled){auto r=currentRecipe();r.flipHorizontal=enabled;applyRecipe(r,QStringLiteral("水平翻转"));});connect(flipVertical,&QPushButton::clicked,this,[this](bool enabled){auto r=currentRecipe();r.flipVertical=enabled;applyRecipe(r,QStringLiteral("垂直翻转"));});
     auto button=[this,form](const QString &label,auto callback){auto *b=new QPushButton(label);form->addRow(b);connect(b,&QPushButton::clicked,this,callback);return b;};
     auto *selectCrop=button(QStringLiteral("在照片上裁剪"),[this]{beginCropSelection();});selectCrop->setObjectName("begin-crop");selectCrop->setToolTip(QStringLiteral("显示完整校正画面，拖选后应用裁剪；Esc退出。"));
+    auto *constrainCrop=button(QStringLiteral("去除空白边缘"),[this]{constrainCurrentCrop();});constrainCrop->setObjectName("constrain-crop");constrainCrop->setToolTip(QStringLiteral("在校正后的有效源范围内按当前比例收紧裁剪框，保守去除旋转/透视等产生的透明边缘；保持裁框中心与比例，可能比最小所需多裁一点，不会拉伸或填充，可撤销。"));constrainCrop->setAccessibleName(QStringLiteral("去除空白边缘，按当前比例保守收紧裁剪框"));
     auto *resetGeometry=button(QStringLiteral("复位构图"),[this]{auto r=currentRecipe();r.crop={0,0,1,1};r.angle=0;r.perspective={0,0};r.distortion=0;r.chromaticAberration={0,0};r.flipHorizontal=r.flipVertical=false;applyRecipe(r,QStringLiteral("复位构图"));});resetGeometry->setObjectName("reset-geometry");resetGeometry->setToolTip(QStringLiteral("恢复完整画面，清除透视、畸变校正、横向色差、校直和水平/垂直翻转；保留调色。"));
     button(QStringLiteral("重置所有调整"),[this]{applyRecipe({},QStringLiteral("重置"));});
-    auto *hint=new QLabel(QStringLiteral("调整只作用当前照片。标记和参数暂存于本次会话。校直维持裁框，边角可再裁去。"));hint->setWordWrap(true);form->addRow(hint);
+    auto *hint=new QLabel(QStringLiteral("调整只作用当前照片。标记和参数暂存于本次会话。旋转、透视和光学校正可能露出透明边缘，可用“去除空白边缘”保守收紧裁框。"));hint->setWordWrap(true);form->addRow(hint);
     for(auto *value:editPanel->findChildren<QDoubleSpinBox *>()){value->setMinimumWidth(76);value->setMaximumWidth(94);}
     new Ui::ParameterWheelGuard(editPanel);
     sections->addStretch();auto *scroll=new QScrollArea;scroll->setObjectName("global-adjustment-scroll");scroll->setWidgetResizable(true);scroll->setWidget(editPanel);dock->setWidget(scroll);Ui::installAdjustmentNavigation(dock,scroll);addDockWidget(Qt::RightDockWidgetArea,dock);resizeDocks({dock},{350},Qt::Horizontal);editPanel->setEnabled(false);
@@ -464,6 +466,7 @@ bool Window::neutralPickerAvailable() const{
     return current>=0&&!comparing&&!cropSelecting&&!pointRangeActive&&!sharpenMaskActive&&displayed==photos[current].path&&displayedTag==expected&&editPanel->isEnabled()&&editor->canPickNeutral(photos[current].path,live,expected);
 }
 void Window::updatePickerState(){
+    if(auto *button=findChild<QPushButton *>("constrain-crop"))button->setEnabled(current>=0&&!comparing&&!cropSelecting&&editPanel->isEnabled());
     auto *button=findChild<QPushButton *>("wb-picker");const bool available=neutralPickerAvailable();
     findChild<QPushButton *>("wb-original")->setEnabled(available&&(live.warmth!=0||live.tint!=0));findChild<QPushButton *>("wb-auto")->setEnabled(available);
     if(!available)button->setChecked(false);button->setEnabled(available);canvas->setPickerMode(available&&button->isChecked());
@@ -485,6 +488,19 @@ void Window::beginCropSelection(){
     if(auto *button=findChild<QPushButton *>("wb-picker"))button->setChecked(false);
     comparing=false;compareButton->setChecked(false);markViewEpochChange();cropSelecting=true;canvas->setCropMode(false);
     showAdjustmentSection(QStringLiteral("构图"));requestEdit();
+}
+void Window::constrainCurrentCrop(){
+    if(current<0||comparing||cropSelecting||!editPanel->isEnabled())return;
+    endControlEdit();
+    const auto document=currentPhotoDocument();
+    if(!document||!document->asset.normalizedSize.isValid()){statusBar()->showMessage(QStringLiteral("尚无可用的源尺寸，无法约束裁切"),6000);return;}
+    auto recipe=currentRecipe();QRectF output=recipe.crop;QString error;
+    if(!constrainedCrop(document->asset.normalizedSize,recipe,output,error)){
+        statusBar()->showMessage(error.isEmpty()?QStringLiteral("无法约束裁切"):error,6000);return;
+    }
+    if(output==recipe.crop){statusBar()->showMessage(QStringLiteral("当前裁切已在有效源范围内"),6000);return;}
+    recipe.crop=output;applyRecipe(recipe,QStringLiteral("去除空白边缘"));
+    statusBar()->showMessage(QStringLiteral("约束裁切已应用，可撤销"),6000);
 }
 void Window::syncCanvasTools(){
     syncLocalTool();

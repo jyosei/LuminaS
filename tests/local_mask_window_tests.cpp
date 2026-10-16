@@ -13,6 +13,7 @@
 #include "render/local_renderer.h"
 #include "render/geometry_transform.h"
 #include <QFile>
+#include <QLineF>
 using namespace LocalEdit;
 namespace {
 bool waitFor(const std::function<bool()> &test){QElapsedTimer t;t.start();while(!test()){if(t.elapsed()>90000)return false;QTest::qWait(10);}return true;}
@@ -29,6 +30,12 @@ QByteArray maskIndices(const QImage &i){
     for(int y=0;y<i.height();++y)hash.addData(QByteArrayView(reinterpret_cast<const char *>(i.constScanLine(y)),i.width()));
     return hash.result().toHex();
 }
+float alphaMinimum(const QImage &image){
+    float value=1;
+    for(int y=0;y<image.height();++y){const auto *p=reinterpret_cast<const float *>(image.constScanLine(y));
+        for(int x=0;x<image.width();++x){if(!std::isfinite(p[x*4+3]))return -1;value=std::min(value,p[x*4+3]);}}
+    return value;
+}
 bool setup(Window &w,Canvas *c,QSignalSpy &paint,QTemporaryDir &dir){
     QObject::connect(w.findChild<EditLoader *>(),&EditLoader::ready,&w,[&w](const EditResult &r){w.setProperty("mask-last-result",QVariant::fromValue(r));});
     if(!dir.isValid())return false;auto path=qEnvironmentVariable("LUMINA_MASK_SAMPLE");
@@ -43,6 +50,66 @@ void spin(QDoubleSpinBox *s,double value){s->setValue(value);QMetaObject::invoke
 class LocalMaskWindowTests:public QObject {
     Q_OBJECT
 private slots:
+    void constrainCropKeepsLocalLayersAndUndo(){
+        QTemporaryDir dir;DocumentSnapshot frozen;
+        {
+            Window w(nullptr,QStringLiteral(""));auto *c=w.findChild<Canvas *>("photo-canvas");QVERIFY(c);
+            w.setWindowTitle(QStringLiteral("LuminaS · 裁切边界验证"));
+            QSignalSpy paint(c,&Canvas::canonicalFramePainted);QVERIFY(setup(w,c,paint,dir));
+            w.findChild<QPushButton *>("local-gradient-radial")->click();
+            const auto from=point(c,{.5,.5}),to=point(c,{.7,.5});
+            QTest::mousePress(c,Qt::LeftButton,Qt::NoModifier,from);move(c,to);QTest::mouseRelease(c,Qt::LeftButton,Qt::NoModifier,to);
+            spin(w.findChild<QDoubleSpinBox *>("local-exposure"),.7);
+            QVERIFY(waitFor([&]{return painted(w,c,paint);}));
+            auto g=w.currentRecipe();g.crop={.08,.06,.84,.87};g.angle=7;g.perspective={.08,-.06};g.distortion=.07;
+            g.chromaticAberration={.3,-.2};g.flipHorizontal=true;g.lensShading=-.3;
+            const auto settled=[&]{const auto r=qvariant_cast<EditResult>(w.property("mask-last-result"));
+                return painted(w,c,paint)&&!r.tag.interactive&&!r.workFrame.linear.isNull();};
+            paint.clear();w.applyRecipe(g,"边界重现");QVERIFY(waitFor(settled));
+            const auto before=w.currentPhotoDocument();const auto oldHash=pixels(c->presenter()->canonicalImage());
+            const auto oldFrame=qvariant_cast<EditResult>(w.property("mask-last-result"));
+            QVERIFY(alphaMinimum(oldFrame.workFrame.linear)<.01f);
+            auto *button=w.findChild<QPushButton *>("constrain-crop");QVERIFY(button);QVERIFY(button->isEnabled());
+            w.findChild<QTabWidget *>("adjustment-scope-tabs")->setCurrentIndex(0);
+            auto *choice=w.findChild<QComboBox *>("adjustment-section-choice");QVERIFY(choice);
+            const int composition=choice->findText(QStringLiteral("构图"));QVERIFY(composition>=0);
+            choice->setCurrentIndex(composition);QMetaObject::invokeMethod(choice,"activated",Qt::DirectConnection,Q_ARG(int,composition));
+            auto *scroll=w.findChild<QScrollArea *>("global-adjustment-scroll");QVERIFY(scroll);scroll->ensureWidgetVisible(button);QTest::qWait(50);
+            QVERIFY(button->isVisible());button->setFocus();QTRY_VERIFY(button->hasFocus());
+            paint.clear();QTest::keyClick(button,Qt::Key_Space);QVERIFY(waitFor(settled));
+            frozen=w.currentPhotoDocument();QCOMPARE(frozen->layers,before->layers);
+            QVERIFY(frozen->global.crop.width()<g.crop.width());
+            QVERIFY(QLineF(frozen->global.crop.center(),g.crop.center()).length()<1e-12);
+            QVERIFY(std::abs(frozen->global.crop.width()/frozen->global.crop.height()-g.crop.width()/g.crop.height())<1e-12);
+            auto onlyCrop=g;onlyCrop.crop=frozen->global.crop;QCOMPARE(frozen->global,onlyCrop);
+            const auto final=qvariant_cast<EditResult>(w.property("mask-last-result"));
+            QVERIFY(alphaMinimum(final.workFrame.linear)>.9999f);
+            const auto finalHash=pixels(c->presenter()->canonicalImage());QVERIFY(finalHash!=oldHash);
+            button->click();QCOMPARE(w.currentRecipe(),frozen->global); // no second history entry
+            paint.clear();w.undoEdit();QCOMPARE(w.currentRecipe(),g);QCOMPARE(w.currentPhotoDocument()->layers,before->layers);
+            QVERIFY(waitFor(settled));QCOMPARE(pixels(c->presenter()->canonicalImage()),oldHash);
+            paint.clear();w.redoEdit();QCOMPARE(w.currentRecipe(),onlyCrop);QCOMPARE(w.currentPhotoDocument()->layers,before->layers);
+            QVERIFY(waitFor(settled));QCOMPARE(pixels(c->presenter()->canonicalImage()),finalHash);
+            w.compareOriginal(true);QVERIFY(!button->isEnabled());
+            w.compareOriginal(false);QVERIFY(waitFor(settled));QVERIFY(button->isEnabled());
+            if(!qEnvironmentVariable("LUMINA_CROP_LAYOUT").isEmpty()){
+                QVERIFY(qEnvironmentVariable("LUMINA_MASK_SAMPLE").isEmpty());
+                QVERIFY(w.grab().save(qEnvironmentVariable("LUMINA_CROP_LAYOUT")));
+            }
+            qInfo().noquote()<<"constrained-native"<<final.workFrame.raw<<final.image.size()<<frozen->global.crop<<"minimumAlpha"<<alphaMinimum(final.workFrame.linear)<<finalHash;
+        }
+        if(qEnvironmentVariableIsSet("LUMINA_CROP_FULL_REPLAY")){
+            const auto loaded=readSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);
+            QVERIFY2(loaded.source,qPrintable(loaded.error));QCOMPARE(loaded.source->sha256,frozen->asset.sourceHash);
+            QCOMPARE(loaded.source->linear.size(),frozen->asset.normalizedSize);QString error;QByteArray first;
+            for(int i=0;i<2;++i){const auto full=renderDocumentFullLinear(*loaded.source,*frozen,error);
+                QVERIFY2(!full.isNull(),qPrintable(error));QVERIFY(alphaMinimum(full)>.9999f);
+                QCOMPARE(full.size(),renderedSize(frozen->asset.normalizedSize,frozen->global));
+                if(i==0)first=pixels(full);else QCOMPARE(pixels(full),first);
+                qInfo().noquote()<<"constrained-full"<<i<<full.size()<<"minimumAlpha"<<alphaMinimum(full)<<first;
+            }
+        }
+    }
     void globalCombinationsKeepLocalHistoryAndPreparedPixels(){
         QTemporaryDir dir;DocumentSnapshot frozenColor;QByteArray colorHash;
         {

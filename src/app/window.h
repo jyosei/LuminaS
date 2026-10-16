@@ -201,6 +201,7 @@ private:
     void updateCropAspect();
     void updatePickerState();
     void beginCropSelection();
+    void constrainCurrentCrop();
     void showAdjustmentSection(const QString &title);
     void syncCanvasTools();
     QLabel *pickerHint;
