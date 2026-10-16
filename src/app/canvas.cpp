@@ -37,7 +37,8 @@ void Canvas::updateCursor() {
 }
 void Canvas::updateToolTip(){
     QString tip=QStringLiteral("左键小手拖动 · 滚轮围绕指针缩放 · 双击适屏");
-    if(brushActive)tip+=QStringLiteral("\n画笔: 左键绘制 · Alt 擦除 · Space 临时小手 · [ ] 大小 · O 覆盖 · Esc 取消");
+    if(brushActive)tip+=gradientMode?QStringLiteral("\n渐变: 拖动创建 · 拖控制点调整 · Alt 减去 · Space 小手 · O 覆盖 · Esc 取消"):
+        QStringLiteral("\n画笔: 左键绘制 · Alt 擦除 · Space 临时小手 · [ ] 大小 · O 覆盖 · Esc 取消");
     const QString policy=displayNote;
     if(!policy.isEmpty())tip+=QStringLiteral("\n显示: %1").arg(policy);
     setToolTip(tip);
@@ -60,7 +61,7 @@ void Canvas::setImage(QImage value,QString context) {
     // a geometry change ends it first.
     if(reset)finishBrushGesture(false);
     // A different document/revision must never keep showing the previous mask.
-    if(reset||context!=imageContext){localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;}
+    if(reset||context!=imageContext){localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;gradientHandles.clear();gradientHandle=-1;}
     image = std::move(value);
     imageContext=context;
     liveAngle=0;
@@ -103,6 +104,26 @@ void Canvas::finishBrushGesture(bool canceled){
     updateCursor();update();
     emit brushFinished(canceled);
 }
+void Canvas::setGradientMode(bool enabled){
+    if(gradientMode==enabled)return;
+    finishBrushGesture(false);gradientMode=enabled;gradientHandle=-1;
+    updateToolTip();update();
+}
+void Canvas::setGradientHandles(QVector<QPointF> handles){
+    if(gradientHandles==handles)return;
+    gradientHandles=std::move(handles);update();
+}
+int Canvas::gradientHandleAt(const QPointF &position) const{
+    if(!gradientMode||!brushActive||image.isNull()||presented.isNull()||liveAngle!=0)return -1;
+    int hit=-1;double nearest=9*9;
+    for(qsizetype i=0;i<gradientHandles.size();++i){
+        const auto &uv=gradientHandles[i];if(!std::isfinite(uv.x())||!std::isfinite(uv.y()))continue;
+        const QPointF point=offset+QPointF(uv.x()*image.width()*scale,uv.y()*image.height()*scale);
+        const auto d=point-position;const double distance=d.x()*d.x()+d.y()*d.y();
+        if(distance<nearest){hit=int(i);nearest=distance;}
+    }
+    return hit;
+}
 void Canvas::setLocalMask(QImage mask){
     if(mask.isNull()||mask.format()!=QImage::Format_Indexed8||image.isNull()||mask.size()!=image.size()){
         localMask={};localMaskColors.clear();maskSourceKey=paintedMaskKey=0;update();return;
@@ -118,7 +139,7 @@ void Canvas::setLocalMask(QImage mask){
     localMask=std::move(mask);
     update();
 }
-void Canvas::setMessage(QString value) { finishBrushGesture(false); stopHandPan(); image = {}; imageContext.clear(); presented={}; localMask={}; localMaskColors.clear(); dragging=false;cropDragging=false;leftDown=false;message = std::move(value);setAccessibleDescription(message);if(displayPresenter)displayPresenter->clear();updateCursor();updateToolTip();update(); }
+void Canvas::setMessage(QString value) { finishBrushGesture(false); stopHandPan(); image = {}; imageContext.clear(); presented={}; localMask={}; localMaskColors.clear();gradientHandles.clear();gradientHandle=-1; dragging=false;cropDragging=false;leftDown=false;message = std::move(value);setAccessibleDescription(message);if(displayPresenter)displayPresenter->clear();updateCursor();updateToolTip();update(); }
 void Canvas::setMonitorProfile(QByteArray icc,QString note){if(displayPresenter)displayPresenter->setMonitorProfile(icc,note);}
 void Canvas::useSystemMonitorProfile(){if(displayPresenter)displayPresenter->useSystemMonitorProfile();}
 QString Canvas::displaySnapshot() const{return displayPresenter?displayPresenter->displaySnapshot():QString();}
@@ -169,6 +190,18 @@ void Canvas::paintEvent(QPaintEvent *) {
     // repaint of the same presented frame, so it never counts as framePainted.
     if(!presented.isNull()&&!localMask.isNull())p.drawImage(QPointF(0,0),localMask);
     if(cropDragging){p.setPen(QPen(Qt::yellow,2/scale,Qt::DashLine));p.drawRect(QRectF(cropStart,cropEnd).normalized());}
+    // Draw controls in widget DIP after restoring the photo transform and clip.
+    // This does not change either image serial or mask provenance.
+    if(gradientMode&&brushActive&&liveAngle==0&&!presented.isNull()){
+        p.resetTransform();p.setClipping(false);p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(QColor("#ded9ed"),1.5));p.setBrush(QColor("#37313f"));
+        for(const auto &uv:gradientHandles){
+            if(!std::isfinite(uv.x())||!std::isfinite(uv.y()))continue;
+            const auto point=offset+QPointF(uv.x()*image.width()*scale,uv.y()*image.height()*scale);
+            if(!QRectF(rect()).adjusted(-6,-6,6,6).contains(point))continue;
+            p.drawEllipse(point,5,5);
+        }
+    }
     const bool newFrame=!presented.isNull()&&paintedSerial!=imageSerial;
     const bool newMask=!presented.isNull()&&!localMask.isNull()&&maskSourceKey!=paintedMaskKey;
     const auto frameKey=presentedCanonicalKey,maskKey=maskSourceKey;
@@ -200,7 +233,8 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     }
     if(brushActive&&event->button()==Qt::LeftButton&&!cropMode&&!pickerMode&&liveAngle==0&&!image.isNull()&&!presented.isNull()){
         const auto p=(event->position()-offset)/scale;
-        if(p.x()>=0&&p.y()>=0&&p.x()<image.width()&&p.y()<image.height()){
+        gradientHandle=gradientHandleAt(event->position());
+        if(gradientHandle>=0||(p.x()>=0&&p.y()>=0&&p.x()<image.width()&&p.y()<image.height())){
             brushGesture=true;
             // Alt is frozen for this stroke at press time.
             brushSubtract=(event->modifiers()&Qt::AltModifier)!=0;

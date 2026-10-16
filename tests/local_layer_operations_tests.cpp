@@ -26,6 +26,38 @@ QByteArray pixels(const QImage &image){return QByteArray(reinterpret_cast<const 
 class LocalLayerOperationsTests:public QObject {
     Q_OBJECT
 private slots:
+    void removeComponentPreservesOrderAndUndoPixels(){
+        auto base=document();auto &mask=base.layers[0].mask;
+        MaskComponent linear;linear.id="linear";linear.geometry=LinearGeometry{{0,0},{32,24}};
+        MaskComponent radial;radial.id="radial";radial.geometry=RadialGeometry{{16,12},15,10,27};
+        radial.operation=MaskOperation::Subtract;radial.strength=.7;
+        mask.components.append(linear);mask.components.append(radial);
+        const auto frozen=base;QString error;const auto source=frame();
+        const auto before=renderDocumentFullLinear(source,base,error);QVERIFY2(!before.isNull(),qPrintable(error));
+        LayerChange c;c.kind=LayerChangeKind::RemoveComponent;c.layerId="a";c.componentId="radial";
+        const auto changed=changedLayers(base,c,error);QVERIFY2(changed,qPrintable(error));
+        QCOMPARE(changed->layers[0].mask.components.size(),2);
+        QCOMPARE(changed->layers[0].mask.components[0],mask.components[0]);
+        QCOMPARE(changed->layers[0].mask.components[1],linear);
+        QCOMPARE(changed->layers[0].mask.version,mask.version+1);
+        QCOMPARE(changed->layers[0].version,base.layers[0].version+1);
+        QCOMPARE(changed->layers[1],base.layers[1]);QCOMPARE(changed->global,base.global);QCOMPARE(changed->asset,base.asset);
+        const auto after=renderDocumentFullLinear(source,*changed,error);QVERIFY(!after.isNull());QVERIFY(pixels(before)!=pixels(after));
+        EditHistory history;QVERIFY(history.commitSnapshot(base.asset.sourcePath,std::make_shared<const PhotoDocument>(base),"setup",&error));
+        QVERIFY(history.commitSnapshot(base.asset.sourcePath,changed,"remove component",&error));
+        QCOMPARE(history.undo(),base.asset.sourcePath);
+        QCOMPARE(pixels(renderDocumentFullLinear(source,*history.snapshot(base.asset.sourcePath),error)),pixels(before));
+        QCOMPARE(history.redo(),base.asset.sourcePath);
+        QCOMPARE(pixels(renderDocumentFullLinear(source,*history.snapshot(base.asset.sourcePath),error)),pixels(after));
+        c.componentId="stroke-b";QVERIFY(!changedLayers(base,c,error));QVERIFY(!error.isEmpty()); // another layer's id
+        c.componentId="";QVERIFY(!changedLayers(base,c,error));QVERIFY(!error.isEmpty());
+        c.componentId="radial";auto exhausted=base;exhausted.layers[0].mask.version=std::numeric_limits<quint64>::max();
+        QVERIFY(!changedLayers(exhausted,c,error));QVERIFY(!error.isEmpty());
+        exhausted=base;exhausted.layers[0].version=std::numeric_limits<quint64>::max();
+        QVERIFY(!changedLayers(exhausted,c,error));QVERIFY(!error.isEmpty());
+        auto last=document();c.componentId="stroke-a";const auto empty=changedLayers(last,c,error);QVERIFY2(empty,qPrintable(error));
+        QVERIFY(empty->layers[0].mask.components.isEmpty());QCOMPARE(base,frozen);
+    }
     void renameVisibilityAndOpacityHaveOneHistoryStep(){
         const auto base=document();EditHistory history;QString error;
         QVERIFY(history.commitSnapshot(base.asset.sourcePath,std::make_shared<const PhotoDocument>(base),"setup",&error));

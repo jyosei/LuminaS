@@ -22,6 +22,11 @@ public:
     // panning; the canvas routes normalised positions only and never performs
     // output-to-source mapping or brush sampling.
     void setBrushMode(bool enabled);
+    // Gradient controls are view-only output UVs; invalid projections are skipped.
+    // The host owns source geometry. Hit radius is fixed in widget DIP.
+    void setGradientMode(bool enabled);
+    void setGradientHandles(QVector<QPointF> handles);
+    int pressedGradientHandle() const { return gradientHandle; }
     bool brushMode() const { return brushActive; }
     bool brushGestureActive() const { return brushGesture; }
     // Ends the current stroke. Clears internal gesture state before emitting, so
@@ -66,6 +71,7 @@ private:
     void imageReady(const QImage &image,const QString &note);
     // Widget point to normalised image position; no clamping, no source maths.
     QPointF normalizedFor(const QPointF &position) const;
+    int gradientHandleAt(const QPointF &position) const;
     void stopHandPan(); // ends a hand/space pan without touching a brush stroke
     QImage image;            // canonical: layout, crop and picker coordinates
     QImage presented;        // actual displayed frame (device codes); may be null
@@ -83,6 +89,9 @@ private:
     bool cropMode=false,cropDragging=false;
     bool pickerMode=false;
     bool brushActive=false;      // brush mode requested by the host
+    bool gradientMode=false;
+    int gradientHandle=-1;
+    QVector<QPointF> gradientHandles;
     bool brushGesture=false;     // a stroke is currently open
     bool brushSubtract=false;    // Alt intent frozen at press time
     bool spaceHeld=false;        // temporary hand pan modifier held

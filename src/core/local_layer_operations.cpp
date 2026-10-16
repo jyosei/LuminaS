@@ -49,6 +49,15 @@ DocumentSnapshot changedLayers(const PhotoDocument &base,const LayerChange &chan
             result.layers.insert(index+1,std::move(copy));break;
         }
         case LayerChangeKind::Remove:result.layers.removeAt(index);break;
+        case LayerChangeKind::RemoveComponent:{
+            qsizetype component=-1;
+            for(qsizetype i=0;i<layer.mask.components.size();++i)
+                if(layer.mask.components[i].id==change.componentId){component=i;break;}
+            if(component<0)return fail("Mask component no longer exists");
+            if(layer.mask.version==std::numeric_limits<quint64>::max())return fail("Mask version overflow");
+            if(!bump())return {};
+            ++layer.mask.version;layer.mask.components.removeAt(component);break;
+        }
         default:return fail("Unsupported layer operation");
         }
     }

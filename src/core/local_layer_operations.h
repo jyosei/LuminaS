@@ -3,10 +3,10 @@
 #include <QStringList>
 
 namespace LocalEdit {
-enum class LayerChangeKind {Rename,Visibility,Opacity,Duplicate,Remove,Reorder};
+enum class LayerChangeKind {Rename,Visibility,Opacity,Duplicate,Remove,Reorder,RemoveComponent};
 struct LayerChange {
     LayerChangeKind kind=LayerChangeKind::Rename;
-    QString layerId,name,duplicateId;
+    QString layerId,name,duplicateId,componentId;
     QStringList componentIds;
     QStringList order; // complete bottom-to-top layer-id permutation
     bool visible=true;

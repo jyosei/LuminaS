@@ -8,6 +8,7 @@
 #include <QFocusEvent>
 #include <QEvent>
 #include <cmath>
+#include <limits>
 #include "app/canvas.h"
 #include "app/display_presenter.h"
 
@@ -46,6 +47,35 @@ bool near(double value,double expected,double tolerance=0.01){return std::abs(va
 class LocalCanvasInputTests : public QObject {
     Q_OBJECT
 private slots:
+    void gradientHandlesHitInDipsOutsidePhotoWithoutPhotoPaint(){
+        Canvas canvas;showCanvas(canvas);QSignalSpy painted(&canvas,&Canvas::framePainted);
+        presentImage(canvas,painted);const auto fit=fitOf(canvas);
+        canvas.setBrushMode(true);canvas.setGradientMode(true);
+        const double nan=std::numeric_limits<double>::quiet_NaN();
+        canvas.setGradientHandles({QPointF(.5,.5),QPointF(-.015,.5),QPointF(nan,nan)});
+        canvas.repaint();QCoreApplication::processEvents();const int baseline=painted.count();
+        canvas.setGradientHandles({QPointF(.5,.5),QPointF(-.015,.5)});canvas.repaint();QCoreApplication::processEvents();
+        QCOMPARE(painted.count(),baseline);
+        QSignalSpy pressed(&canvas,&Canvas::brushPressed),finished(&canvas,&Canvas::brushFinished);
+        const auto centre=widgetAt(fit,.5,.5);
+        QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,centre+QPoint(8,0));
+        QCOMPARE(canvas.pressedGradientHandle(),0);QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,centre+QPoint(8,0));
+        QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,centre+QPoint(12,0));
+        QCOMPARE(canvas.pressedGradientHandle(),-1);QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,centre+QPoint(12,0));
+        const auto outside=widgetAt(fit,-.015,.5);QVERIFY(outside.x()>=0);
+        QTest::mousePress(&canvas,Qt::LeftButton,Qt::AltModifier,outside);
+        QCOMPARE(canvas.pressedGradientHandle(),1);QVERIFY(pressed.last()[0].toPointF().x()<0);QVERIFY(pressed.last()[1].toBool());
+        canvas.setGradientMode(false);QVERIFY(!canvas.brushGestureActive());QCOMPARE(finished.count(),3);
+        QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,outside);QCOMPARE(finished.count(),3);
+        canvas.setGradientMode(true);canvas.actualPixels();
+        const QPoint actualCentre(canvas.width()/2,canvas.height()/2);
+        QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,actualCentre+QPoint(8,0));
+        QCOMPARE(canvas.pressedGradientHandle(),0);canvas.finishBrushGesture(true);
+        QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,actualCentre+QPoint(8,0));
+        painted.clear();presentImage(canvas,painted,QStringLiteral("another-photo"));
+        QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,actualCentre);
+        QCOMPARE(canvas.pressedGradientHandle(),-1);canvas.finishBrushGesture(true);
+    }
     // 1. Normalised press/move/final-release, exactly one finish, release ends it.
     void pressMoveReleaseNormalizedSingleFinish(){
         Canvas canvas;showCanvas(canvas);
