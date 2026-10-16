@@ -3,15 +3,17 @@
 
 namespace LocalEdit {
 // One mutable scratch owner per executing thread; never share it across jobs.
-// Storage is bounded by the largest accepted 512x512 tile, not the full image.
+// Storage is bounded by tile query count and the source feather support row,
+// never a full-source mask. Temporary feather payload is reported as a peak.
 class MaskRasterScratch {
 public:
     MaskRasterScratch()=default;
     MaskRasterScratch(const MaskRasterScratch &)=delete;
     MaskRasterScratch &operator=(const MaskRasterScratch &)=delete;
     qsizetype storageBytes() const{return points.capacity()*qsizetype(sizeof(QPointF))+
-        active.capacity()+values.capacity()*qsizetype(sizeof(float));}
+        active.capacity()+values.capacity()*qsizetype(sizeof(float))+featherScratchBytes;}
     qint64 mappingNs=0,samplingNs=0;
+    qsizetype featherScratchBytes=0; // peak temporary payload, not retained capacity
 private:
     friend class PreparedBrushMask;
     QVector<QPointF> points;
@@ -27,13 +29,15 @@ public:
     bool valid() const{return bool(impl);}
     QString error() const{return problem;}
     float sample(QPointF point,float alpha=1) const;
-    // B2 is pointwise, so halo=0. Whole-mask spatial feather arrives in C4.
+    // Feather evaluates source-plane support through bounded streaming groups;
+    // the output tile never requests a full-source coverage buffer.
     // A tile is at most 512x512; production traversal defaults to 256.
     bool rasterize(const MaskMapping &mapping,const QImage &alphaFrame,QRect rect,
         QVector<float> &output,QString &error,CancellationToken cancel={},
         MaskRasterScratch *scratch=nullptr) const;
     qsizetype indexBytes() const;
 private:
+    float rawSample(QPointF point) const;
     struct Impl;
     std::shared_ptr<const Impl> impl;
     QString problem;

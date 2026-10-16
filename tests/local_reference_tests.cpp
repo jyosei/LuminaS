@@ -240,11 +240,11 @@ void LocalReferenceTests::maskAlphaCoverageAndUnsupported(){
 
     LocalEdit::Mask feathered=mask;
     feathered.feather=.5;
-    QVERIFY(!LocalEdit::BrushMaskReference(feathered).valid());
+    QVERIFY(LocalEdit::BrushMaskReference(feathered).valid());
 
     LocalEdit::Mask inverted=mask;
     inverted.invert=true;
-    QVERIFY(!LocalEdit::BrushMaskReference(inverted).valid());
+    QVERIFY(LocalEdit::BrushMaskReference(inverted).valid());
 }
 
 // rasterize consumes RGBA32FPx4 alpha; output rect uses global output coordinates.

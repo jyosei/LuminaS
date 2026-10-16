@@ -3,6 +3,7 @@
 #include "tone_operator.h"
 #include "local_mask_math.h"
 #include "local_gradient_math.h"
+#include "local_mask_feather.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -56,11 +57,12 @@ BrushGeometry BrushSampler::snapshot() const {
 }
 
 BrushMaskReference::BrushMaskReference(Mask value):mask(std::move(value)){
-    if(mask.version<1||mask.feather!=0||mask.invert||mask.components.size()>maximumComponentsPerLayer){
-        problem="Brush reference requires feather=0 and invert=false";return;
+    if(mask.version<1||!std::isfinite(mask.feather)||mask.feather<0||mask.feather>16384||mask.components.size()>maximumComponentsPerLayer){
+        problem="Invalid whole mask settings";return;
     }
     QSet<QString> ids;qsizetype count=0;
     for(const auto &component:mask.components){
+        if(component.operation==MaskOperation::Add&&component.strength>0)zeroMask=false;
         const auto *brush=std::get_if<BrushGeometry>(&component.geometry);
         if(component.id.isEmpty()||component.id.size()>128||ids.contains(component.id)||
            !std::isfinite(component.strength)||component.strength<0||component.strength>1||
@@ -77,6 +79,11 @@ BrushMaskReference::BrushMaskReference(Mask value):mask(std::move(value)){
 float BrushMaskReference::sample(QPointF point,float alpha) const {
     if(!valid()||!std::isfinite(alpha))return std::numeric_limits<float>::quiet_NaN();
     if(alpha<=1e-8f||!std::isfinite(point.x())||!std::isfinite(point.y()))return 0;
+    const float value=zeroMask?0:mask.feather>0?
+        Detail::featherSample(point,mask.feather,[this](QPointF p){return rawSample(p);}):rawSample(point);
+    return mask.invert?1-value:value;
+}
+float BrushMaskReference::rawSample(QPointF point) const {
     float coverage=0;
     for(const auto &component:mask.components){
         if(component.strength==0)continue;
@@ -107,7 +114,13 @@ bool BrushMaskReference::rasterize(const MaskMapping &mapping,const QImage &alph
         for(int x=rect.left();x<=rect.right();++x){
             const auto point=outputToSource({(x+.5)/mapping.outputSize.width(),(y+.5)/mapping.outputSize.height()},
                 mapping.sourceSize,mapping.geometry);
-            const float coverage=sample(point,alpha[x*4+3]);
+            const float a=alpha[x*4+3];float coverage=0;
+            if(!std::isfinite(a)){error="Invalid alpha/mask sample";return false;}
+            if(a>1e-8f&&std::isfinite(point.x())&&std::isfinite(point.y())){
+                coverage=zeroMask?0:mask.feather>0?Detail::featherSample(point,mask.feather,[this](QPointF p){return rawSample(p);},cancel):rawSample(point);
+                if(mask.invert)coverage=1-coverage;
+            }
+            if(isCanceled(cancel)){error="Canceled";return false;}
             if(!std::isfinite(coverage)){error="Invalid alpha/mask sample";return false;}
             result[qsizetype(y-rect.top())*rect.width()+x-rect.left()]=coverage;
         }

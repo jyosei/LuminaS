@@ -1,6 +1,7 @@
 #include "local_mask.h"
 #include "local_mask_math.h"
 #include "local_gradient_math.h"
+#include "local_mask_feather.h"
 #include "geometry_transform.h"
 #include <algorithm>
 #include <cmath>
@@ -73,12 +74,14 @@ struct Stroke {
     }
 };
 }
-struct PreparedBrushMask::Impl {std::vector<Stroke> strokes;qsizetype bytes=0;};
+struct PreparedBrushMask::Impl {std::vector<Stroke> strokes;qsizetype bytes=0;double feather=0;bool invert=false,zeroMask=true;};
 PreparedBrushMask::PreparedBrushMask(const Mask &mask){
     const BrushMaskReference check(mask);
     if(!check.valid()){problem=check.error();return;}
     auto prepared=std::make_shared<Impl>();prepared->strokes.reserve(mask.components.size());
+    prepared->feather=mask.feather;prepared->invert=mask.invert;
     for(const auto &component:mask.components){
+        if(component.operation==MaskOperation::Add&&component.strength>0)prepared->zeroMask=false;
         Stroke stroke;
         stroke.strength=float(component.strength);stroke.operation=component.operation;
         if(const auto *geometry=std::get_if<BrushGeometry>(&component.geometry)){
@@ -105,6 +108,11 @@ qsizetype PreparedBrushMask::indexBytes() const{return impl?impl->bytes:0;}
 float PreparedBrushMask::sample(QPointF point,float alpha) const {
     if(!impl||!std::isfinite(alpha))return std::numeric_limits<float>::quiet_NaN();
     if(alpha<=1e-8f||!std::isfinite(point.x())||!std::isfinite(point.y()))return 0;
+    const float value=impl->zeroMask?0:impl->feather>0?
+        Detail::featherSample(point,impl->feather,[this](QPointF p){return rawSample(p);}):rawSample(point);
+    return impl->invert?1-value:value;
+}
+float PreparedBrushMask::rawSample(QPointF point) const {
     float coverage=0;
     for(const auto &stroke:impl->strokes){const float a=stroke.amount(point);
         coverage=stroke.operation==MaskOperation::Add?coverage+(1-coverage)*a:coverage*(1-a);}
@@ -130,7 +138,7 @@ bool PreparedBrushMask::rasterize(const MaskMapping &mapping,const QImage &alpha
     if(memory.points.capacity()>maximumTilePoints)memory.points={};
     if(memory.active.capacity()>maximumTilePoints)memory.active={};
     if(memory.values.capacity()>maximumTilePoints)memory.values={};
-    memory.mappingNs=memory.samplingNs=0;
+    memory.mappingNs=memory.samplingNs=0;memory.featherScratchBytes=0;
     memory.points.resize(count);memory.active.fill(0,count);memory.values.fill(0,count);
     auto *points=memory.points.data();auto *active=memory.active.data();auto *result=memory.values.data();
     const OutputSourceMapping transform(mapping.sourceSize,mapping.geometry);
@@ -150,7 +158,12 @@ bool PreparedBrushMask::rasterize(const MaskMapping &mapping,const QImage &alpha
         }
     }
     memory.mappingNs=timer.nsecsElapsed();
-    for(const auto &stroke:impl->strokes){
+    if(impl->feather>0&&!impl->zeroMask){
+        QVector<float> feathered;
+        if(!Detail::featherPoints(memory.points,memory.active,impl->feather,[this](QPointF p){return rawSample(p);},
+            feathered,error,cancel,&memory.featherScratchBytes))return false;
+        memory.values=std::move(feathered);result=memory.values.data();
+    }else for(const auto &stroke:impl->strokes){
         if(isCanceled(cancel)){error="Canceled";return false;}
         if(stroke.strength==0||(!stroke.linear&&!stroke.bounds.intersects(tileBounds,stroke.radius)))continue;
         for(qsizetype i=0;i<count;++i)if(active[i]){
@@ -159,7 +172,10 @@ bool PreparedBrushMask::rasterize(const MaskMapping &mapping,const QImage &alpha
         }
     }
     if(isCanceled(cancel)){error="Canceled";return false;}
-    for(qsizetype i=0;i<count;++i)result[i]=std::clamp(result[i],0.f,1.f);
+    for(qsizetype i=0;i<count;++i){
+        result[i]=std::clamp(result[i],0.f,1.f);
+        if(impl->invert&&active[i])result[i]=1-result[i];
+    }
     memory.samplingNs=timer.nsecsElapsed()-memory.mappingNs;
     output.swap(memory.values);
     if(memory.values.capacity()>maximumTilePoints)memory.values={};

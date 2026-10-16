@@ -36,8 +36,10 @@ public:
     bool rasterize(const MaskMapping &mapping,const QImage &alphaFrame,QRect rect,
         QVector<float> &output,QString &error,CancellationToken cancel={}) const;
 private:
+    float rawSample(QPointF sourcePoint) const;
     Mask mask;
     QString problem;
+    bool zeroMask=true;
 };
 
 class LocalPixelTransform {

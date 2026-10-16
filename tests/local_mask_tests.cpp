@@ -332,7 +332,7 @@ void LocalMaskTests::preparedSnapshotIsIndependentOfSourcePoints(){
 
     // A freshly constructed record over the mutated source must now differ, which
     // proves the probe coordinates really do observe the stroke.
-    QVERIFY(!PreparedBrushMask(mask).valid());
+    QVERIFY(PreparedBrushMask(mask).valid());
     mask.feather=0;mask.invert=false;
     PreparedBrushMask rebuilt(mask);
     QVERIFY(rebuilt.valid());
@@ -436,7 +436,7 @@ void LocalMaskTests::edgeCasesAndUnsupportedGeometry(){
         for(float v:actual)QCOMPARE(bits(v),bits(0.0f));
     }
     {
-        // C3 gradients are supported; whole-mask feather/invert remain C4.
+        // Gradients and C4 whole-mask operations are supported.
         Mask unsupported;
         unsupported.components.append(linearComponent(QPointF(10,10),QPointF(50,40),0.5,MaskOperation::Add));
         unsupported.components.append(radialComponent(QPointF(30,20),12.0,9.0,15.0,0.7,MaskOperation::Subtract));
@@ -456,27 +456,28 @@ void LocalMaskTests::edgeCasesAndUnsupportedGeometry(){
         QVERIFY(!feathered.invert);
         BrushMaskReference referenceFeather(feathered);
         PreparedBrushMask preparedFeather(feathered);
-        QVERIFY(!referenceFeather.valid());
-        QVERIFY(!preparedFeather.valid());
-        QVERIFY(!referenceFeather.error().isEmpty());
-        QVERIFY(!preparedFeather.error().isEmpty());
-        QVERIFY(std::isnan(preparedFeather.sample(QPointF(32,24),1.0f)));
+        QVERIFY(referenceFeather.valid());
+        QVERIFY(preparedFeather.valid());
+        QVERIFY(referenceFeather.error().isEmpty());
+        QVERIFY(preparedFeather.error().isEmpty());
+        QCOMPARE(preparedFeather.sample(QPointF(32,24),1.0f),referenceFeather.sample(QPointF(32,24),1.0f));
 
         Mask inverted=transparent;
         inverted.invert=true;
         QCOMPARE(inverted.feather,0.0);
         BrushMaskReference referenceInvert(inverted);
         PreparedBrushMask preparedInvert(inverted);
-        QVERIFY(!referenceInvert.valid());
-        QVERIFY(!preparedInvert.valid());
-        QVERIFY(!preparedInvert.error().isEmpty());
-        QVERIFY(std::isnan(preparedInvert.sample(QPointF(32,24),1.0f)));
+        QVERIFY(referenceInvert.valid());
+        QVERIFY(preparedInvert.valid());
+        QVERIFY(preparedInvert.error().isEmpty());
+        QCOMPARE(preparedInvert.sample(QPointF(32,24),1.0f),referenceInvert.sample(QPointF(32,24),1.0f));
 
         // An invalid prepared record must also refuse to rasterize.
         QVector<float> guarded=sentinel(qsizetype(frame.width())*frame.height());
         QString error;
         const auto before=guarded;
-        QVERIFY(!preparedFeather.rasterize(mapping,alphaFrame(output,1.0f),frame,guarded,error));
+        feathered.feather=16385;const PreparedBrushMask invalidFeather(feathered);
+        QVERIFY(!invalidFeather.rasterize(mapping,alphaFrame(output,1.0f),frame,guarded,error));
         QVERIFY(!error.isEmpty());
         QCOMPARE(guarded.size(),before.size());
         QVERIFY(std::memcmp(guarded.constData(),before.constData(),size_t(before.size())*sizeof(float))==0);
