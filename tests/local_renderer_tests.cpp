@@ -2,6 +2,7 @@
 #include <bit>
 #include <cstring>
 #include <cmath>
+#include <functional>
 #include "render/local_renderer.h"
 #include "render/local_reference.h"
 #include "render/vignette_operator.h"
@@ -41,6 +42,32 @@ bool exact(const QImage &a,const QImage &b){
 class LocalRendererTests:public QObject {
     Q_OBJECT
 private slots:
+    void indexedMaskReusesMetadataButInvalidatesActualMask(){
+        const auto frame=source();auto doc=document(frame);doc.layers={layer("cached")};doc.layers[0].parameters.exposure=.5;
+        RenderView view;view.localMaskVisible=true;view.localMaskLayer="cached";LocalPreviewCache cache;
+        const auto render=[&](const PhotoDocument &d){return renderDocumentPreview(frame,d,d.global,3840,nullptr,view,{},&cache);};
+        const auto reference=[&](const PhotoDocument &d){return renderDocumentPreview(frame,d,d.global,3840,nullptr,view);};
+        const auto first=render(doc);QVERIFY2(first.error.isEmpty(),qPrintable(first.error));QVERIFY(!first.localMask.isNull());
+        const auto key=first.localMask.cacheKey();const auto builds=cache.stats().builds;
+        doc.layers[0].parameters.exposure=.8;doc.layers[0].name="Renamed";doc.layers[0].opacity=.4;++doc.layers[0].version;
+        const auto metadata=render(doc);QVERIFY(exact(metadata.localMask,reference(doc).localMask));QCOMPARE(metadata.localMask.cacheKey(),key);QCOMPARE(cache.stats().builds,builds);
+        doc.layers[0].enabled=false;const auto hidden=render(doc);QCOMPARE(hidden.localMask.cacheKey(),key);QCOMPARE(cache.stats().builds,builds);doc.layers[0].enabled=true;
+        const QVector<std::function<void(PhotoDocument &)>> changes{
+            [](PhotoDocument &d){d.layers[0].mask.components[0].strength=.9;},
+            [](PhotoDocument &d){d.layers[0].mask.components[0].operation=MaskOperation::Subtract;},
+            [](PhotoDocument &d){std::get<BrushGeometry>(d.layers[0].mask.components[0].geometry).radius=2;},
+            [](PhotoDocument &d){d.layers[0].mask.feather=2;},
+            [](PhotoDocument &d){d.layers[0].mask.invert=true;},
+            [](PhotoDocument &d){++d.layers[0].mask.version;}
+        };
+        for(const auto &change:changes){
+            auto modified=doc;change(modified);const auto before=cache.stats().builds;const auto actual=render(modified),expected=reference(modified);
+            QVERIFY2(actual.error.isEmpty(),qPrintable(actual.error));QVERIFY(exact(actual.image,expected.image));QVERIFY(exact(actual.localMask,expected.localMask));
+            QVERIFY(actual.localMask.cacheKey()!=key);QVERIFY(cache.stats().builds>before);QCOMPARE(actual.localMask.colorCount(),0);
+        }
+        cache.clear();const auto refreshed=render(doc);QVERIFY(exact(refreshed.localMask,first.localMask));QVERIFY(refreshed.localMask.cacheKey()!=key);
+        QVERIFY(cache.stats().retainedBytes<=256*1024*1024);
+    }
     void emptyUsesLegacy(){
         const auto frame=source();auto doc=document(frame);doc.global.contrast=.2;doc.global.saturation=.8;
         QString error;const auto full=renderDocumentFullLinear(frame,doc,error);
@@ -155,11 +182,13 @@ private slots:
             const auto value=shown.localMask.constScanLine(y)[x];covered+=value>0;
             QCOMPARE(value,uchar(std::lround(expected[y*shown.localMask.width()+x]*255)));
         }
-        QVERIFY(covered>0);QCOMPARE(cache.stats().builds,quint64(1));
+        QVERIFY(covered>0);QCOMPARE(cache.stats().builds,quint64(2));
         doc.layers[0].parameters.exposure=.5;
         const auto adjusted=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view,{},&cache);
         QVERIFY2(adjusted.error.isEmpty(),qPrintable(adjusted.error));QVERIFY(exact(shown.localMask,adjusted.localMask));
-        QCOMPARE(cache.stats().builds,quint64(2)); // effect builds prefix but reuses mask
+        QCOMPARE(cache.stats().builds,quint64(3)); // effect builds prefix, reuses float and indexed mask
+        QCOMPARE(shown.localMask.cacheKey(),adjusted.localMask.cacheKey());
+        QCOMPARE(adjusted.localMask.colorCount(),0); // Canvas alone supplies the palette
         QVERIFY(exact(adjusted.image,renderDocumentPreview(frame,doc,doc.global).image));
         doc.layers[0].enabled=false;
         const auto hidden=renderDocumentPreview(frame,doc,doc.global,3840,nullptr,view,{},&cache);

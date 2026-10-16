@@ -36,6 +36,19 @@ void spin(QDoubleSpinBox *s,double value){s->setValue(value);QMetaObject::invoke
 class LocalMaskWindowTests:public QObject {
     Q_OBJECT
 private slots:
+    void parameterDragReusesVisibleCoverageWhilePhotoStillUpdates(){
+        QTemporaryDir dir;Window w(nullptr,QStringLiteral(""));auto *c=w.findChild<Canvas *>("photo-canvas");QSignalSpy paint(c,&Canvas::canonicalFramePainted);QVERIFY(setup(w,c,paint,dir));
+        w.findChild<QPushButton *>("local-gradient-radial")->click();const auto from=point(c,{.5,.5}),to=point(c,{.7,.5});
+        paint.clear();QTest::mousePress(c,Qt::LeftButton,Qt::NoModifier,from);move(c,to);QTest::mouseRelease(c,Qt::LeftButton,Qt::NoModifier,to);
+        QVERIFY(waitFor([&]{return painted(w,c,paint);}));auto *slider=w.findChild<QSlider *>("slider-local-exposure");QVERIFY(slider);
+        paint.clear();slider->setSliderDown(true);slider->setValue(40);QVERIFY(waitFor([&]{return painted(w,c,paint);}));
+        const auto first=qvariant_cast<EditResult>(w.property("mask-last-result"));QVERIFY(!first.localMask.isNull());
+        const auto oldPhoto=pixels(c->presenter()->canonicalImage());QSignalSpy masks(c,&Canvas::localMaskPainted);
+        paint.clear();slider->setValue(70);QVERIFY(waitFor([&]{return painted(w,c,paint);}));
+        const auto second=qvariant_cast<EditResult>(w.property("mask-last-result"));
+        QCOMPARE(second.localMask.cacheKey(),first.localMask.cacheKey());QVERIFY(pixels(c->presenter()->canonicalImage())!=oldPhoto);QCOMPARE(masks.count(),0);
+        slider->setSliderDown(false);
+    }
     void featherInvertHistoryAndDisplayIsolation(){
         QTemporaryDir dir;Window w(nullptr,QStringLiteral(""));auto *c=w.findChild<Canvas *>("photo-canvas");QVERIFY(c);QSignalSpy paint(c,&Canvas::canonicalFramePainted);QVERIFY(setup(w,c,paint,dir));
         w.findChild<QPushButton *>("local-gradient-radial")->click();

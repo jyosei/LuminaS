@@ -234,15 +234,20 @@ int main(int argc,char **argv){
         effectHash=hash;
     }
     LocalPreviewCache cache;
-    QJsonArray cachedEffectMs;double cachedColdMs=0;
+    RenderView cachedView;cachedView.localMaskVisible=app.arguments().contains("--overlay");cachedView.localMaskLayer=layer.id;
+    QJsonArray cachedEffectMs,cachedMaskMs;double cachedColdMs=0;QString indexedHash;
     for(int round=0;round<4;++round){
         document.layers[0].parameters.exposure=.5+.1*round;
         document.layers[0].version++;document.revision++;document.localIdentity++;
         timer.restart();const auto rendered=renderDocumentPreview(source,document,document.global,
-            3840,nullptr,{}, {},&cache);
+            3840,nullptr,cachedView, {},&cache);
         const double elapsed=timer.nsecsElapsed()/1e6;
         if(rendered.image.isNull()){qCritical().noquote()<<rendered.error;return 1;}
-        if(round==0)cachedColdMs=elapsed;else cachedEffectMs.append(elapsed);
+        if(round==0)cachedColdMs=elapsed;else {cachedEffectMs.append(elapsed);cachedMaskMs.append(rendered.maskElapsedMs);}
+        if(cachedView.localMaskVisible){
+            const auto hash=QString::fromLatin1(QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char *>(rendered.localMask.constBits()),rendered.localMask.sizeInBytes()),QCryptographicHash::Sha256).toHex());
+            if(!indexedHash.isEmpty()&&hash!=indexedHash){qCritical("mask changed during parameter drag");return 1;}indexedHash=hash;
+        }
         const auto referenceEffect=renderDocumentPreview(source,document,document.global);
         if(referenceEffect.image.isNull()||rendered.image!=referenceEffect.image){
             qCritical("cached effect disagrees with uncached effect");return 1;
@@ -268,6 +273,9 @@ int main(int argc,char **argv){
         {QStringLiteral("syntheticRgbEffectMs"),effectMs},
         {QStringLiteral("cachedColdRgbEffectMs"),cachedColdMs},
         {QStringLiteral("cachedParameterDragRgbEffectMs"),cachedEffectMs},
+        {QStringLiteral("cachedMaskViewMs"),cachedMaskMs},
+        {QStringLiteral("indexedMaskSha256"),indexedHash},
+        {QStringLiteral("overlay"),cachedView.localMaskVisible},
         {QStringLiteral("cacheBuilds"),double(cacheStats.builds)},
         {QStringLiteral("cacheHits"),double(cacheStats.hits)},
         {QStringLiteral("cacheRetainedBytes"),double(cacheStats.retainedBytes)},

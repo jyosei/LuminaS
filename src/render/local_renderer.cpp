@@ -5,6 +5,7 @@
 #include "grain_operator.h"
 #include "color/color_pipeline.h"
 #include "geometry_transform.h"
+#include "io/preview_size.h"
 #include <QElapsedTimer>
 #include <QDataStream>
 #include <QIODevice>
@@ -183,39 +184,49 @@ QImage maskView(const SourceFrame &source,const PhotoDocument &document,const Re
     const AdjustmentLayer *layer=nullptr;
     for(const auto &candidate:document.layers)if(candidate.id==layerId){layer=&candidate;break;}
     if(!layer){error="Selected mask layer no longer exists";return {};}
-    const PreparedBrushMask mask(layer->mask);if(!mask.valid()){error=mask.error();return {};}
     auto geometry=preparedGeometry(recipe);geometry.flipHorizontal=recipe.flipHorizontal;geometry.flipVertical=recipe.flipVertical;
-    QImage alpha;
-    if(geometry==Recipe{}&&std::max(source.linear.width(),source.linear.height())<=longEdge)alpha=source.linear;
-    else alpha=renderLinear(source,geometry,longEdge,error,{},cancel);
-    if(alpha.isNull())return {};
-    const MaskMapping mapping{document.asset.normalizedSize,alpha.size(),document.global};
-    QVector<float> coverage;LocalPreviewCache::Ptr payload;
-    if(cache){
-        const auto key=maskKey(source,document,*layer,alpha.size(),error);if(key.isEmpty())return {};
-        payload=cachedBuild(*cache,key,[&](QString &problem)->LocalPreviewCache::Ptr{
-            LocalPreviewPayload value;
-            if(!rasterizeMaskPreview(mask,mapping,alpha,value.coverage,problem,cancel))return {};
-            return std::make_shared<const LocalPreviewPayload>(std::move(value));
-        },error,cancel);
-        if(!payload)return {};
-    }else if(!rasterizeMaskPreview(mask,mapping,alpha,coverage,error,cancel))return {};
-    const auto *values=payload?payload->coverage.constData():coverage.constData();
-    QImage result(alpha.size(),QImage::Format_Indexed8);
-    if(result.isNull()){error="Mask view allocation";return {};}
-    result.fill(0); // deterministic row padding as well as coverage indices
-    // Indices are coverage only. Canvas supplies UI colours after monitor
-    // presentation; this quantization never enters local RGB or export.
-    for(int y=0;y<result.height();++y){
-        if(isCanceled(cancel)){error="Canceled";return {};}
-        auto *row=result.scanLine(y);
-        for(int x=0;x<result.width();++x){
-            const float value=values[qsizetype(y)*result.width()+x];
-            if(!std::isfinite(value)||value<0||value>1){error="Invalid mask coverage";return {};}
-            row[x]=uchar(std::lround(value*255));
+    const auto target=previewSize(renderedSize(source.linear.size(),geometry),longEdge);
+    QByteArray key;
+    if(cache){key=maskKey(source,document,*layer,target,error);if(key.isEmpty())return {};}
+    const auto build=[&](QString &problem)->QImage {
+        const PreparedBrushMask mask(layer->mask);if(!mask.valid()){problem=mask.error();return {};}
+        QImage alpha;
+        if(geometry==Recipe{}&&std::max(source.linear.width(),source.linear.height())<=longEdge)alpha=source.linear;
+        else alpha=renderLinear(source,geometry,longEdge,problem,{},cancel);
+        if(alpha.isNull())return {};
+        if(alpha.size()!=target){problem="Mask view size mismatch";return {};}
+        const MaskMapping mapping{document.asset.normalizedSize,alpha.size(),document.global};
+        QVector<float> coverage;LocalPreviewCache::Ptr payload;
+        if(cache){
+            payload=cachedBuild(*cache,key,[&](QString &inner)->LocalPreviewCache::Ptr{
+                LocalPreviewPayload value;
+                if(!rasterizeMaskPreview(mask,mapping,alpha,value.coverage,inner,cancel))return {};
+                return std::make_shared<const LocalPreviewPayload>(std::move(value));
+            },problem,cancel);
+            if(!payload)return {};
+        }else if(!rasterizeMaskPreview(mask,mapping,alpha,coverage,problem,cancel))return {};
+        const auto *values=payload?payload->coverage.constData():coverage.constData();
+        QImage result(alpha.size(),QImage::Format_Indexed8);
+        if(result.isNull()){problem="Mask view allocation";return {};}
+        result.fill(0); // deterministic row padding; no display palette in cache
+        for(int y=0;y<result.height();++y){
+            if(isCanceled(cancel)){problem="Canceled";return {};}
+            auto *row=result.scanLine(y);
+            for(int x=0;x<result.width();++x){
+                const float value=values[qsizetype(y)*result.width()+x];
+                if(!std::isfinite(value)||value<0||value>1){problem="Invalid mask coverage";return {};}
+                row[x]=uchar(std::lround(value*255));
+            }
         }
-    }
-    return result;
+        return result;
+    };
+    if(!cache)return build(error);
+    const auto indexKey=QCryptographicHash::hash(QByteArray("mask-indices-v1")+key,QCryptographicHash::Sha256);
+    const auto payload=cachedBuild(*cache,indexKey,[&](QString &problem)->LocalPreviewCache::Ptr{
+        LocalPreviewPayload value;value.pixels=build(problem);if(value.pixels.isNull())return {};
+        return std::make_shared<const LocalPreviewPayload>(std::move(value));
+    },error,cancel);
+    return payload?payload->pixels:QImage{};
 }
 }
 QImage renderDocumentPreviewLinear(const SourceFrame &source,const PhotoDocument &document,
