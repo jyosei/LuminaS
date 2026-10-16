@@ -1,6 +1,9 @@
 // Isolated G0/G1 reference experiment. No application backend selection changes.
 #include "render/cpu_renderer.h"
 #include "color/color_pipeline.h"
+#include "color/display_transform.h"
+#include <QColorSpace>
+#include <QCryptographicHash>
 #include "render/local_reference.h"
 #include "render/local_mask.h"
 #include "render/local_renderer.h"
@@ -181,6 +184,7 @@ struct Pipeline {
     }
 };
 #include "local.inc"
+#include "display_codes.inc"
 #include "presentation.inc"
 }
 
@@ -188,6 +192,9 @@ int main(int argc,char **argv){
     QApplication app(argc,argv);QCommandLineParser parser;
     parser.addOptions({QCommandLineOption("report","New JSON report path","path"),QCommandLineOption("iterations","Warm measured iterations (100 minimum)","count","100"),
         QCommandLineOption("size","small, 4k, 24mp or 45mp","size","4k"),QCommandLineOption("local","G3 resident local parameters; no presentation"),QCommandLineOption("local-present","G3 resident local native presentation, fixed sRGB"),QCommandLineOption("capabilities-only","Only check GPU support"),QCommandLineOption("present","G2 native widget experiment, fixed sRGB only")});
+    parser.addOption(QCommandLineOption("local-layers","One or two resident layers (two requires local-present)","count","1"));
+    parser.addOption(QCommandLineOption("test-display-p3","Use a synthetic Display P3 target ICC for native validation"));
+    parser.addOption(QCommandLineOption("display-icc","Read a valid RGB display ICC for native validation","path"));
     parser.process(app);const auto reportPath=parser.value("report");
     if(reportPath.isEmpty()||QFile::exists(reportPath)){qCritical("A new --report path is required");return 2;}
     QJsonObject report{{"schema",1},{"qtVersion",qVersion()},{"timestampUtc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
@@ -195,13 +202,26 @@ int main(int argc,char **argv){
     int exitCode=0;
     try{
         require(int(parser.isSet("present"))+int(parser.isSet("local"))+int(parser.isSet("local-present"))+int(parser.isSet("capabilities-only"))<=1,"Choose only one experiment mode");
+        bool layersOk=false;const int layers=parser.value("local-layers").toInt(&layersOk);
+        require(layersOk&&(layers==1||layers==2),"Local layers must be 1 or 2");
+        require(layers==1||parser.isSet("local-present"),"Two layers require local-present");
+        QByteArray displayIcc;
+        require(!(parser.isSet("test-display-p3")&&parser.isSet("display-icc")),"Choose only one display ICC");
+        if(parser.isSet("test-display-p3")||parser.isSet("display-icc")){
+            require(parser.isSet("present")||parser.isSet("local-present"),"Display ICC requires native presentation");
+            if(parser.isSet("test-display-p3"))displayIcc=QColorSpace(QColorSpace::DisplayP3).iccProfile();
+            else {QFile file(parser.value("display-icc"));require(file.open(QIODevice::ReadOnly),"Cannot read display ICC");displayIcc=file.read(4*1024*1024+1);}
+            QString error;require(!displayIcc.isEmpty()&&validDisplayProfile(displayIcc,error),"Invalid display profile");
+            report.insert("displayIccSha256",QString::fromLatin1(QCryptographicHash::hash(displayIcc,QCryptographicHash::Sha256).toHex()));
+        }
         if(parser.isSet("present")||parser.isSet("local-present")){
             bool ok=false;const int iterations=parser.value("iterations").toInt(&ok);
             require(ok&&iterations>=100&&iterations<=1000,"Iterations must be 100..1000");
             require(parser.value("size")=="4k","Native experiment currently requires 4k input");
             const bool local=parser.isSet("local-present");
-            report.insert("presentation",runPresentation(iterations,{},local));report.insert("passed",true);
-            report.insert("scope",local?"G3 single resident local layer, native fixed sRGB; excludes arbitrary monitor ICC and physical scanout":"G2 native fixed sRGB reference; excludes arbitrary monitor ICC and physical scanout");
+            report.insert("presentation",runPresentation(iterations,{},local,layers,displayIcc));report.insert("passed",true);
+            report.insert("scope",QString(local?"G3 bounded resident local layers; ":"G2 basic native experiment; ")+
+                (displayIcc.isEmpty()?"fixed sRGB; ":"explicit SDR RGB display ICC; ")+"no dynamic monitor changes or physical scanout validation");
         }else{
         QElapsedTimer init;init.start();QRhiD3D11InitParams params;
         std::unique_ptr<QRhi> rhi(QRhi::create(QRhi::D3D11,&params,QRhi::EnableTimestamps));

@@ -23,6 +23,9 @@ param(
     [string]$ReportDirectory = 'build/private-qa/gpu',
     [ValidateRange(100, 1000)][int]$Iterations = 100,
     [ValidateSet('small', '4k', '24mp', '45mp')][string]$Size = '4k',
+    [ValidateRange(1, 2)][int]$LocalLayers = 1,
+    [switch]$TestDisplayP3,
+    [string]$DisplayIcc = '',
     [switch]$CapabilitiesOnly,
     [switch]$Present,
     [switch]$Local,
@@ -43,6 +46,12 @@ if (($Present -or $LocalPresent) -and $Size -ne '4k') {
 if ($Local -and $Size -notin @('small', '4k')) {
     throw 'The local compute experiment accepts only small or 4k.'
 }
+if ($LocalLayers -ne 1 -and -not $LocalPresent) {
+    throw 'Two layers require LocalPresent mode.'
+}
+if ($TestDisplayP3 -and -not ($Present -or $LocalPresent)) { throw 'TestDisplayP3 requires a native mode.' }
+if ($DisplayIcc -and -not ($Present -or $LocalPresent)) { throw 'DisplayIcc requires a native mode.' }
+if ($DisplayIcc -and $TestDisplayP3) { throw 'Choose only one display ICC.' }
 
 $script:ProbeTimeoutSeconds = 900
 $script:EvidenceNames = @('hardware.json', 'report.json', 'stdout.txt', 'stderr.txt', 'process.json')
@@ -269,7 +278,7 @@ Initialize-ReportDirectory -ReportDirectory $reportDir
 $sourceManifest = @('CMakeLists.txt', 'tools/run-gpu-experiment.ps1',
     'tools/gpu-probe/main.cpp', 'tools/gpu-probe/presentation.inc',
     'tools/gpu-probe/basic.comp', 'tools/gpu-probe/local.comp',
-    'tools/gpu-probe/local.inc', 'tools/gpu-probe/present.vert',
+    'tools/gpu-probe/local.inc', 'tools/gpu-probe/display_codes.inc', 'tools/gpu-probe/present.vert',
     'tools/gpu-probe/present.frag', 'build/dev/gpu_probe.exe') | ForEach-Object {
     $manifestPath = Join-Path $workspaceRoot $_
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash }
@@ -293,6 +302,9 @@ if ($CapabilitiesOnly) { $probeArguments += '--capabilities-only' }
 if ($Present) { $probeArguments += '--present' }
 if ($Local) { $probeArguments += '--local' }
 if ($LocalPresent) { $probeArguments += '--local-present' }
+if ($Local -or $LocalPresent) { $probeArguments += @('--local-layers', [string]$LocalLayers) }
+if ($TestDisplayP3) { $probeArguments += '--test-display-p3' }
+if ($DisplayIcc) { $probeArguments += @('--display-icc', $DisplayIcc) }
 
 $startupUtc = [System.DateTime]::UtcNow.ToString('o')
 $result = Invoke-GpuProbe -Executable $probePath -Arguments $probeArguments -WorkingDirectory $workspaceRoot `
@@ -313,6 +325,9 @@ $processRecord = [ordered]@{
     present        = [bool]$Present
     local          = [bool]$Local
     localPresent   = [bool]$LocalPresent
+    localLayers    = $LocalLayers
+    testDisplayP3  = [bool]$TestDisplayP3
+    displayIcc     = $DisplayIcc
     iterations     = $Iterations
     size           = $Size
 }

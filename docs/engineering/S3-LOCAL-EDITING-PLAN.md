@@ -1,5 +1,7 @@
 # 新版 S3 实施计划：图层、蒙版、笔刷与局部调整（设计与待实施）
 
+2026-10-16 GPU双层/ICC更新：4K常驻双层/静态Display P3与系统sRGB配置原生验证通过，GPU更新到frameSubmitted约34ms/62ms，最终颜色缓冲对CPU≤1码值；见GPU-STACK-ICC-RESULTS.md。仍是隔离研究、尚缺实照/动态上下文与故障，生产CPU不切换。回到C6实照/prepared组合及D，不把GPU有限实验当整个S3或33ms新覆盖目标完成。
+
 2026-10-16 GPU原生更新：用户要求的混合常驻方向已推进隔离G3单层4K呈现，100次更新p95约25.65ms、最终颜色缓冲对CPU≤1码值，尚限固定sRGB且终点为frameSubmitted；不冒称S3新笔迹overlay已达33ms。证据GPU-LOCAL-NATIVE-RESULTS.md。继续多层/ICC研究及C6实照/prepared组合、D可靠性；生产CPU和完整61项60通过的限制保留。
 
 2026-10-16 C6/GPU更新：16组合18 passed，完整61项60通过，色差拖动反馈一次失败后独立复测通过，未定位、不宣布全绿；见S3-C6-COMBINATIONS-RESULTS.md。用户新增GPU常驻方向已启动隔离G3九项局部实验，4K数值通过、常驻计算约16–23ms，仍需ICC/原生显示/多层与释放趋势；GPU-LOCAL-ROUND2-RESULTS.md。不替换生产CPU或跳过C6/D，整个S3仍未完成。
