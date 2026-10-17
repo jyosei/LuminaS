@@ -1,4 +1,6 @@
-# LuminaS 构建：S2 / 4K缓存编辑
+# LuminaS 构建入口与历史记录
+
+2026-10-17新机入口见[迁移交接](../../handoff/S3-MIGRATION.md)：需要Qt Sql/SQLite插件、生产同目录RAW worker、固定版本导出依赖；保存恢复与局部导出现已实现。下文按时间保留旧阶段记录，其中“尚未实现”及旧通过数不是当前状态，当前验收见[STATUS](STATUS.md)。
 
 2026-10-16 S3 存储基础增加 Qt6::Sql；现有 Qt 6.8.3 SDK 已包含该模块及 `plugins/sqldrivers/qsqlite.dll`，无需另装数据库服务。开发运行须能找到同版本 Qt bin 与插件目录。最新完整回归62/62（374.63秒），局部组合和显式裁切约束见 S3-CROP-CONSTRAINT-RESULTS.md，存储数据基础见 S3-A3-RESULTS.md；保存窗口尚未接入。CTest 为每个 QtTest 保留一份最新文本结果 `build/dev/test-logs/<测试名>.txt`，Windows 无 stdout 时也可定位失败；重复运行覆盖该文本，不积累图像。
 

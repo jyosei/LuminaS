@@ -12,7 +12,16 @@
 
 QList<Export::Asset> Window::exportAssets() const{
     QList<Export::Asset> result;
-    for(int i=0;i<photos.size();++i){const auto &p=photos[i];result.append({p.path,p.sha256,i==current?live:history.value(p.path),revision,p.item&&p.item->isSelected(),p.pick==Pick::Keep});}
+    for(int i=0;i<photos.size();++i){
+        const auto &p=photos[i];Export::Asset asset{p.path,p.sha256,i==current?live:history.value(p.path),revision,p.item&&p.item->isSelected(),p.pick==Pick::Keep};
+        const auto document=i==current?currentPhotoDocument():history.snapshot(p.path);
+        if(document&&!document->layers.isEmpty()){
+            asset.document=std::make_shared<const LocalEdit::PhotoDocument>(*document);
+            asset.recipe=document->global;asset.revision=document->revision;
+            if(asset.hash.isEmpty())asset.hash=document->asset.sourceHash;
+        }
+        result.append(std::move(asset));
+    }
     return result;
 }
 void Window::showExportDialog(){

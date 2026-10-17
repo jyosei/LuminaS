@@ -25,7 +25,7 @@ Queue::Queue(const QString &path,QObject *parent):QObject(parent),record(path){
 }
 Queue::~Queue(){cancelled=true;disconnect(&watcher,nullptr,this,nullptr);pool.waitForDone();}
 bool Queue::save(QString &error){
-    error.clear();QJsonArray jobs;for(const auto &j:items)jobs.append(jobJson(j));
+    error.clear();QJsonArray jobs;for(const auto &j:items){const auto json=jobJson(j);if(json.isEmpty()){error=QStringLiteral("导出任务无法序列化");return false;}jobs.append(json);}
     const auto bytes=QJsonDocument(QJsonObject{{"version",1},{"jobs",jobs}}).toJson(QJsonDocument::Compact);
     if(bytes.size()>16*1024*1024){error=QStringLiteral("导出队列记录超过16MiB");return false;}
     if(!QDir().mkpath(QFileInfo(record).absolutePath())){error=QStringLiteral("无法创建导出队列目录");return false;}
@@ -55,11 +55,14 @@ bool Queue::append(const QList<Job> &jobs,QString &error){
     error.clear();if(running){error=QStringLiteral("导出正在进行，请等待本批完成");return false;}
     if(items.size()+jobs.size()>2000){error=QStringLiteral("队列最多2000项");return false;}
     QSet<QString> ids,paths;for(const auto &j:items){ids.insert(j.id);if(j.status==Status::Pending||j.status==Status::Running)paths.insert(j.path.toCaseFolded());}
-    for(const auto &j:jobs){Job checked;if(!jobFromJson(jobJson(j),checked,error))return false;
-        if(ids.contains(j.id)||(j.status==Status::Pending&&paths.contains(j.path.toCaseFolded()))){error=QStringLiteral("队列存在重复标识或输出路径");return false;}
-        ids.insert(j.id);paths.insert(j.path.toCaseFolded());
+    QList<Job> checked;
+    for(const auto &j:jobs){const auto json=jobJson(j);if(json.isEmpty()){error=QStringLiteral("导出任务无法序列化");return false;}
+        Job decoded;if(!jobFromJson(json,decoded,error))return false;
+        if(ids.contains(decoded.id)||(decoded.status==Status::Pending&&paths.contains(decoded.path.toCaseFolded()))){error=QStringLiteral("队列存在重复标识或输出路径");return false;}
+        ids.insert(decoded.id);paths.insert(decoded.path.toCaseFolded());checked.append(decoded);
     }
-    const auto before=items;items.append(jobs);if(!save(error)){items=before;persistenceError=error;return false;}emit changed();return true;
+    // Store the round-tripped copies so later caller mutations cannot reach the queue.
+    const auto before=items;items.append(checked);if(!save(error)){items=before;persistenceError=error;return false;}emit changed();return true;
 }
 bool Queue::start(QString &error){
     if(unreadable){error=QStringLiteral("导出记录未恢复，不能开始任务");return false;}

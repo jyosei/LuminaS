@@ -20,12 +20,27 @@
 #include <QScreen>
 #include <QAction>
 #include <QDockWidget>
+#include <QTabWidget>
+#include <QScopeGuard>
 using namespace Export;
 class ExportUiTests:public QObject {
  Q_OBJECT
  QTemporaryDir dir;
  QList<Asset> samples(){QList<Asset> result;for(int i=0;i<2;++i){const auto path=dir.filePath(QString::number(i)+".jpg");QImage image(600,400,QImage::Format_RGB32);for(int y=0;y<400;++y)for(int x=0;x<600;++x)image.setPixelColor(x,y,QColor(x*255/600,y*255/400,150));image.setColorSpace(QColorSpace::SRgb);if(!image.save(path,"JPEG"))return {};QFile f(path);if(!f.open(QIODevice::ReadOnly))return {};result.append({path,QString::fromLatin1(QCryptographicHash::hash(f.readAll(),QCryptographicHash::Sha256).toHex()),{},1,true,i==0});}return result;}
 private slots:
+ void windowLocalDocumentBindingAndFreeze(){
+    const auto oldData=qgetenv("LUMINA_EXPORT_DATA_DIR");const bool hadData=qEnvironmentVariableIsSet("LUMINA_EXPORT_DATA_DIR");qputenv("LUMINA_EXPORT_DATA_DIR",dir.filePath("local-window-data").toUtf8());const auto restore=qScopeGuard([&]{if(hadData)qputenv("LUMINA_EXPORT_DATA_DIR",oldData);else qunsetenv("LUMINA_EXPORT_DATA_DIR");});
+    const auto inputs=samples();QCOMPARE(inputs.size(),2);Window w(nullptr,QStringLiteral(""),QStringLiteral(""));w.show();w.addFiles({inputs[0].path,inputs[1].path});QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);QCOMPARE(w.currentIndex(),0);
+    auto *canvas=w.findChild<Canvas *>("photo-canvas");auto *tabs=w.findChild<QTabWidget *>("adjustment-scope-tabs");auto *brush=w.findChild<QPushButton *>("local-new-brush");auto *exposure=w.findChild<QDoubleSpinBox *>("local-exposure");QVERIFY(canvas);QVERIFY(tabs);QVERIFY(brush);QVERIFY(exposure);
+    tabs->setCurrentIndex(1);brush->click();QTRY_VERIFY_WITH_TIMEOUT(canvas->brushMode(),30000);canvas->brushPressed({.3,.4},false);canvas->brushMoved({.6,.5});canvas->brushFinished(false);exposure->setValue(.3);QVERIFY(QMetaObject::invokeMethod(exposure,"editingFinished",Qt::DirectConnection));
+    const auto local=[&](double value){auto d=w.currentPhotoDocument();return d&&!d->layers.isEmpty()&&!d->layers[0].mask.components.isEmpty()&&qAbs(d->layers[0].parameters.exposure-value)<1e-9;};QTRY_VERIFY_WITH_TIMEOUT(local(.3),30000);
+    const auto assets=w.exportAssets();QCOMPARE(assets.size(),2);QVERIFY(assets[0].document);const auto d=w.currentPhotoDocument();QVERIFY(assets[0].recipe==d->global);QCOMPARE(assets[0].revision,d->revision);QCOMPARE(assets[0].hash,d->asset.sourceHash);QCOMPARE(assets[0].path,d->asset.sourcePath);QCOMPARE(d->asset.normalizedSize,QSize(600,400));
+    w.showExportDialog();auto *dialog=w.findChild<ExportDialog *>();auto *queue=w.findChild<Queue *>();QVERIFY(dialog);QVERIFY(queue);dialog->findChild<QComboBox *>("export-range")->setCurrentIndex(0);Settings s;QString error;s.format=Format::Tiff;s.bits=16;s.profileName="ProPhoto RGB";s.icc=builtinProfile(s.profileName,error);s.besideSource=false;s.directory=dir.filePath("local-window-results");dialog->setSettings(s);dialog->startExport();
+    QTRY_VERIFY_WITH_TIMEOUT(!queue->jobs().isEmpty(),30000);QVERIFY(queue->jobs()[0].document);QCOMPARE(queue->jobs()[0].document->layers[0].parameters.exposure,.3);
+    exposure->setValue(-.4);QVERIFY(QMetaObject::invokeMethod(exposure,"editingFinished",Qt::DirectConnection));QTRY_VERIFY_WITH_TIMEOUT(local(-.4),30000);QCOMPARE(queue->jobs()[0].document->layers[0].parameters.exposure,.3);QTRY_VERIFY_WITH_TIMEOUT(!queue->busy(),30000);QCOMPARE(queue->jobs()[0].status,Status::Succeeded);
+    OutputInspector inspector;inspector.resize(900,600);inspector.show();QSignalSpy inspected(&inspector,&OutputInspector::inspected),painted(inspector.canvas(),&Canvas::framePainted);QVERIFY(inspector.inspect(queue->jobs()[0].path,error));QTRY_VERIFY_WITH_TIMEOUT(!inspected.isEmpty(),10000);QVERIFY(inspected.last()[1].toBool());QTRY_VERIFY_WITH_TIMEOUT(!painted.isEmpty(),10000);inspector.findChild<QPushButton *>("output-inspector-actual")->click();QCOMPARE(inspector.canvas()->zoom()*inspector.canvas()->devicePixelRatioF(),1.0);
+    w.activate(1);QTRY_COMPARE_WITH_TIMEOUT(w.currentIndex(),1,30000);QTRY_VERIFY_WITH_TIMEOUT(w.neutralPickerAvailable(),30000);const auto switched=w.exportAssets();QCOMPARE(switched.size(),2);QVERIFY(switched[0].document);QCOMPARE(switched[0].document->layers[0].parameters.exposure,-.4);QCOMPARE(switched[0].revision,switched[0].document->revision);QVERIFY(!switched[1].document);
+ }
  void initTestCase(){QVERIFY(dir.isValid());qputenv("LUMINA_EXPORT_DATA_DIR",dir.filePath("data").toUtf8());}
  void settingsAndNarrowReachability(){
     Queue queue(dir.filePath("layout-queue.json"));ExportDialog dialog(samples(),0,&queue);dialog.show();QVERIFY(QTest::qWaitForWindowExposed(&dialog));

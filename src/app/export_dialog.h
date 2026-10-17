@@ -30,7 +30,7 @@ protected:
  void closeEvent(QCloseEvent *event) override;
  void reject() override;
 private:
- struct Preview {QImage linear,image;QSize full;QString path,hash,error;Recipe recipe;int index=-1;quint64 generation=0,sourceGeneration=0;};
+ struct Preview {QImage linear,image;QSize full;QString path,hash,error;Recipe recipe;LocalEdit::DocumentSnapshot document;int index=-1;quint64 generation=0,sourceGeneration=0;};
  struct Preparation {QList<Export::Job> jobs;QString error;};
  void changed();void sync();void profilesChanged();void updateSummary();void updateResults();void previewNow();void inspectSelected();void openFolder();
  void savePreset();void renamePreset();void deletePreset();void loadPresets();bool persist(QString &error);QList<Export::Asset> targets() const;int representative() const;QString dataDir() const;

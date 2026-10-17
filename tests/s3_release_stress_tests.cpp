@@ -21,10 +21,43 @@
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QApplication>
+#include <QPixmapCache>
+#include <QEvent>
 #include <cmath>
 #include <memory>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#include <malloc.h>
+#endif
 
 namespace {
+QJsonObject processDiagnostics(){
+    QJsonObject result{{"widgets",QApplication::allWidgets().size()},{"windows",QGuiApplication::allWindows().size()}};
+#ifdef Q_OS_WIN
+    PROCESS_MEMORY_COUNTERS_EX memory{};memory.cb=sizeof(memory);DWORD handles=0;
+    if(GetProcessMemoryInfo(GetCurrentProcess(),reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&memory),sizeof(memory))){result["privateBytes"]=double(memory.PrivateUsage);result["workingBytes"]=double(memory.WorkingSetSize);}
+    if(GetProcessHandleCount(GetCurrentProcess(),&handles))result["handles"]=double(handles);
+    result["gdiObjects"]=double(GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS));
+    result["userObjects"]=double(GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS));
+    // Dynamically resolve the Win10 build 20348+ API. Diagnostic only;
+    // allocated and committed heap bytes are distinct from process private bytes.
+    struct Summary {DWORD cb;SIZE_T allocated,committed,reserved,maxReserve;};
+    using HeapSummaryFn=BOOL (WINAPI *)(HANDLE,DWORD,Summary *);
+    const auto summarize=reinterpret_cast<HeapSummaryFn>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"HeapSummary"));
+    result["heapSummaryAvailable"]=summarize!=nullptr;
+    if(summarize){
+        HANDLE heaps[128]{};const DWORD count=GetProcessHeaps(128,heaps);SIZE_T allocated=0,committed=0,reserved=0;DWORD successful=0;
+        if(count&&count<=128)for(DWORD i=0;i<count;++i){Summary summary{};summary.cb=sizeof(summary);if(summarize(heaps[i],0,&summary)){allocated+=summary.allocated;committed+=summary.committed;reserved+=summary.reserved;++successful;}}
+        result["heapCount"]=double(count);result["heapSummaryCount"]=double(successful);result["heapAllocatedBytes"]=double(allocated);result["heapCommittedBytes"]=double(committed);result["heapReservedBytes"]=double(reserved);
+    }
+#endif
+    return result;
+}
 bool newJson(const QString &path,const QJsonObject &object){
     QFile file(path);if(!file.open(QIODevice::WriteOnly|QIODevice::NewOnly))return false;
     const auto bytes=QJsonDocument(object).toJson();return file.write(bytes)==bytes.size()&&file.flush();
@@ -71,8 +104,10 @@ private slots:
         }
         const auto startedUnixMs=QDateTime::currentMSecsSinceEpoch();QElapsedTimer clock;clock.start();
         const auto report=qEnvironmentVariable("LUMINA_RELEASE_REPORT");
+        const bool diagnostics=qEnvironmentVariable("LUMINA_RELEASE_DIAGNOSTICS")=="1";
         const auto runId=QString::number(startedUnixMs)+"-"+QString::number(QCoreApplication::applicationPid());
         QJsonObject state{{"runId",runId},{"startedUnixMs",double(startedUnixMs)},{"targetCycles",cycles},{"completedCycles",0},{"rawCount",0},{"syntheticCount",0},{"entries",QJsonArray()},{"sourcesUnchanged",false}};
+        if(diagnostics)state["initialDiagnostics"]=processDiagnostics();
         const auto writeReport=[&]{
             if(report.isEmpty())return true;
             state["elapsedMs"]=double(clock.elapsed());
@@ -129,6 +164,7 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(fullGeometryWeak.expired(),5000);
             QTest::qWait(1000);
             entry["releasedMs"]=double(clock.elapsed());entry["weakExpired"]=true;
+            if(diagnostics)entry["diagnostics"]=processDiagnostics();
             useRaw?++rawCount:++syntheticCount;entries.append(entry);
             state["completedCycles"]=cycle+1;state["rawCount"]=rawCount;state["syntheticCount"]=syntheticCount;state["entries"]=entries;
             QVERIFY2(writeReport(),"Could not atomically update the release report");
@@ -136,6 +172,17 @@ private slots:
         }
         QCOMPARE(sourceHash(synthetic),syntheticHash);
         if(!raw.isEmpty())QCOMPARE(sourceHash(raw),rawHash);
+        if(diagnostics){
+            // Attribution only, AFTER all normal release measurements. These
+            // probes do not change production behavior or the cycle verdicts.
+            state["beforeTrim"]=processDiagnostics();
+#ifdef Q_OS_WIN
+            state["heapMinResult"]=_heapmin();
+#endif
+            QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QTest::qWait(1000);
+            state["afterHeapMin"]=processDiagnostics();
+            QPixmapCache::clear();QTest::qWait(1000);state["afterPixmapClear"]=processDiagnostics();
+        }
         state["completedCycles"]=cycles;state["rawCount"]=rawCount;state["syntheticCount"]=syntheticCount;state["entries"]=entries;state["sourcesUnchanged"]=true;
         QVERIFY2(writeReport(),"Could not finalize the release report");
         qInfo("release stress: %d cycles complete (raw %d, synthetic %d, sourcesUnchanged true)",cycles,rawCount,syntheticCount);

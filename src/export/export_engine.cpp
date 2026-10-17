@@ -1,5 +1,6 @@
 #include "export_engine.h"
 #include "export_metadata.h"
+#include "render/local_renderer.h"
 #include "export_writer.h"
 #include "color/color_pipeline.h"
 #include "io/source_reader.h"
@@ -176,6 +177,7 @@ Result execute(const Job &job,const std::atomic_bool *cancel,const Progress &pro
     const auto cancelled=[&]{if(stopped(cancel)){result.cancelled=true;result.error=QStringLiteral("已取消");return true;}return false;};
     if(cancelled())return result;
     result.error=validate(job.settings);if(!result.error.isEmpty())return result;
+    if(!validateJobDocument(job,result.error))return result;
     const auto source=QFileInfo(job.source).canonicalFilePath();
     if(source.isEmpty()||job.hash.size()!=64||!validRecipe(job.recipe)){result.error=QStringLiteral("源文件、哈希或配方无效");return result;}
     if(QFileInfo(job.path).absoluteFilePath().compare(source,Qt::CaseInsensitive)==0){result.error=QStringLiteral("禁止覆盖原图");return result;}
@@ -188,7 +190,10 @@ Result execute(const Job &job,const std::atomic_bool *cancel,const Progress &pro
     if(frame.source->sha256.compare(job.hash,Qt::CaseInsensitive)){result.error=QStringLiteral("源文件已变化，请重新创建导出任务");return result;}
     if(cancelled())return result;
     const SourceMetadataSnapshot metadataSnapshot{frame.source->path,frame.source->sha256,frame.source->deliveryMetadata};const bool hasMetadata=frame.source->hasDeliveryMetadata;
-    stage(QStringLiteral("全尺寸渲染"));auto linear=renderLinear(*frame.source,job.recipe,0,result.error,{},sourceCancel);frame.source.reset();if(linear.isNull()){cancelled();return result;}
+    stage(QStringLiteral("全尺寸渲染"));auto linear=job.document?
+        LocalEdit::renderDocumentFullLinear(*frame.source,*job.document,result.error,sourceCancel):
+        renderLinear(*frame.source,job.recipe,0,result.error,{},sourceCancel);
+    frame.source.reset();if(linear.isNull()){cancelled();return result;}
     if(cancelled())return result;
     const auto target=outputSize(linear.size(),job.settings,result.error);if(!target.isValid())return result;
     if(target!=linear.size()){stage(QStringLiteral("调整输出尺寸"));linear=linear.scaled(target,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);if(linear.isNull()){result.error=QStringLiteral("缩放分配失败");return result;}}

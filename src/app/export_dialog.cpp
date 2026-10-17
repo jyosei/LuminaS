@@ -4,6 +4,7 @@
 #include "ui_primitives.h"
 #include "io/source_reader.h"
 #include "render/cpu_renderer.h"
+#include "render/local_renderer.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -33,6 +34,9 @@
 #include <QCloseEvent>
 #include <QtConcurrentRun>
 using namespace Export;
+namespace {
+bool sameDocument(const LocalEdit::DocumentSnapshot &a,const LocalEdit::DocumentSnapshot &b){return a==b||(a&&b&&*a==*b);}
+}
 QString ExportDialog::dataDir() const{const auto override=qEnvironmentVariable("LUMINA_EXPORT_DATA_DIR");return override.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)+"/export":override;}
 ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *parent):ExportDialog(std::move(input),index,queue,parent,{}){}
 ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *parent,PreviewReader reader):QDialog(parent),exportQueue(queue),assets(std::move(input)),currentIndex(index),previewReader(std::move(reader)){
@@ -61,7 +65,7 @@ ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *pa
  auto *footer=new QHBoxLayout;layout->addLayout(footer);counts=new QLabel;counts->setObjectName("export-counts");footer->addWidget(counts,1);auto button=[&](QString label,const char *id){auto *b=new QPushButton(label);b->setObjectName(id);footer->addWidget(b);return b;};cancel=button(QStringLiteral("取消任务"),"export-cancel");retry=button(QStringLiteral("重试未完成"),"export-retry");folder=button(QStringLiteral("文件夹"),"export-open-folder");inspect=button(QStringLiteral("检查成片"),"export-inspect");start=button(QStringLiteral("开始导出"),"export-start");start->setDefault(true);start->setStyleSheet(QStringLiteral("QPushButton#export-start{background:palette(highlight);color:palette(highlighted-text);border:1px solid palette(highlight);font-weight:600;} QPushButton#export-start:hover{border-color:palette(text);} QPushButton#export-start:pressed{border:2px solid palette(text);} QPushButton#export-start:focus{border:2px solid palette(text);} QPushButton#export-start:disabled{background:palette(button);color:palette(mid);border-color:palette(mid);}"));connect(start,&QPushButton::clicked,this,&ExportDialog::startExport);connect(cancel,&QPushButton::clicked,exportQueue,&Queue::cancel);connect(retry,&QPushButton::clicked,this,[this]{QString e;if(!exportQueue->retry(e)||!exportQueue->start(e))diagnostic->setText(e);});connect(folder,&QPushButton::clicked,this,&ExportDialog::openFolder);connect(inspect,&QPushButton::clicked,this,&ExportDialog::inspectSelected);
  debounce.setSingleShot(true);debounce.setInterval(250);connect(&debounce,&QTimer::timeout,this,&ExportDialog::previewNow);
  connect(&previewWatcher,&QFutureWatcher<Preview>::finished,this,[this]{auto r=previewWatcher.result();
-  const bool current=r.sourceGeneration==sourceGeneration&&r.index>=0&&r.index<assets.size()&&assets[r.index].path==r.path&&assets[r.index].recipe==r.recipe;
+  const bool current=r.sourceGeneration==sourceGeneration&&r.index>=0&&r.index<assets.size()&&assets[r.index].path==r.path&&assets[r.index].recipe==r.recipe&&sameDocument(assets[r.index].document,r.document);
   if(current&&!r.linear.isNull()){cachedIndex=r.index;cachedLinear=r.linear;cachedFull=r.full;assets[r.index].hash=r.hash;emit previewSourceCached(r.path,r.hash,r.sourceGeneration);}
   if(current&&r.generation==generation){if(r.image.isNull())canvas->setMessage(r.error);else canvas->setImage(r.image,QStringLiteral("export-preview"));}
   if(previewPending){previewPending=false;previewNow();}updateSummary();});
@@ -99,9 +103,13 @@ void ExportDialog::previewNow(){
  previewCancel=CancellationSource();const auto token=previewCancel.token();activePreviewIndex=i;
  const auto reader=previewReader;
  previewWatcher.setFuture(QtConcurrent::run(&pool,[a,s,gen,sourceGen,i,cached,full,token,reader]{
-  Preview r;r.index=i;r.generation=gen;r.sourceGeneration=sourceGen;r.path=a.path;r.recipe=a.recipe;r.linear=cached;r.full=full;r.hash=a.hash;
+  Preview r;r.index=i;r.generation=gen;r.sourceGeneration=sourceGen;r.path=a.path;r.recipe=a.recipe;r.document=a.document;r.linear=cached;r.full=full;r.hash=a.hash;
   if(isCanceled(token)){r.error=QStringLiteral("已取消");return r;}
-  if(r.linear.isNull()){auto source=reader(a.path,a.recipe.warmth,a.recipe.tint,token,a.hash);if(!source.source){r.error=source.error;return r;}r.hash=source.source->sha256;r.full=renderedSize(source.source->linear.size(),a.recipe);r.linear=renderLinear(*source.source,a.recipe,3840,r.error,{},token);}
+  if(r.hash.isEmpty()&&a.document)r.hash=a.document->asset.sourceHash;
+  Job binding;binding.source=QFileInfo(a.path).absoluteFilePath();binding.hash=r.hash;binding.recipe=a.recipe;binding.revision=a.revision;binding.document=a.document;
+  if(!validateJobDocument(binding,r.error))return r;
+  if(r.linear.isNull()){auto source=reader(a.path,a.recipe.warmth,a.recipe.tint,token,r.hash);if(!source.source){r.error=source.error;return r;}r.hash=source.source->sha256;r.full=renderedSize(source.source->originalSize,a.recipe);
+   r.linear=a.document?LocalEdit::renderDocumentPreviewLinear(*source.source,*a.document,a.recipe,3840,r.error,token):renderLinear(*source.source,a.recipe,3840,r.error,{},token);}
   if(!r.linear.isNull()&&!isCanceled(token))r.image=Export::preview(r.linear,s,r.error,token.get());return r;
  }));
 }
@@ -113,7 +121,7 @@ void ExportDialog::replaceAssets(QList<Asset> input,int index){
  const int old=representative();const auto oldAsset=old>=0?assets[old]:Asset{};
  previewCancel.cancel();++sourceGeneration;++generation;
  assets=std::move(input);currentIndex=index;const int now=representative();
- if(now<0||assets[now].path!=oldAsset.path||assets[now].recipe!=oldAsset.recipe||assets[now].hash!=oldAsset.hash){cachedIndex=-1;cachedLinear={};cachedFull={};}else cachedIndex=cachedLinear.isNull()?-1:now;
+ if(now<0||assets[now].path!=oldAsset.path||assets[now].recipe!=oldAsset.recipe||assets[now].hash!=oldAsset.hash||!sameDocument(assets[now].document,oldAsset.document)){cachedIndex=-1;cachedLinear={};cachedFull={};}else cachedIndex=cachedLinear.isNull()?-1:now;
  debounce.start();
  updateSummary();
 }

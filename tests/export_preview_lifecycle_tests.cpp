@@ -19,6 +19,24 @@ QString hashFile(const QString &path){QFile file(path);if(!file.open(QIODevice::
 class ExportPreviewLifecycleTests:public QObject {
     Q_OBJECT
 private slots:
+    void localDocumentInvalidatesLinearCache(){
+        QTemporaryDir root;QVERIFY(root.isValid());const auto old=qgetenv("LUMINA_EXPORT_DATA_DIR");const bool had=qEnvironmentVariableIsSet("LUMINA_EXPORT_DATA_DIR");qputenv("LUMINA_EXPORT_DATA_DIR",root.path().toUtf8());
+        const auto restore=qScopeGuard([&]{if(had)qputenv("LUMINA_EXPORT_DATA_DIR",old);else qunsetenv("LUMINA_EXPORT_DATA_DIR");});
+        Export::Queue queue(root.filePath("queue.json"));auto sample=asset(root.filePath("synthetic.jpg"));sample.revision=1;
+        LocalEdit::PhotoDocument document;document.asset.id="asset";document.asset.sourcePath=sample.path;document.asset.sourceHash=sample.hash;document.asset.normalizedSize={32,24};document.revision=1;
+        LocalEdit::AdjustmentLayer layer;layer.id="layer";layer.parameters.exposure=1;LocalEdit::MaskComponent component;component.id="stroke";LocalEdit::BrushGeometry brush;brush.points={{16,12}};brush.radius=20;brush.hardness=1;component.geometry=brush;layer.mask.components={component};document.layers={layer};
+        sample.document=std::make_shared<const LocalEdit::PhotoDocument>(document);std::atomic_int calls{0};
+        ExportDialog::PreviewReader reader=[&](const QString &path,double,double,const CancellationToken &,const QString &hash)->FrameResult{
+            ++calls;auto frame=std::make_shared<SourceFrame>();frame->path=path;frame->sha256=hash;frame->originalSize={32,24};frame->linear=QImage(32,24,QImage::Format_RGBA32FPx4);
+            for(int y=0;y<24;++y){auto *p=reinterpret_cast<float *>(frame->linear.scanLine(y));for(int x=0;x<32;++x){p[x*4]=.12f;p[x*4+1]=.18f;p[x*4+2]=.22f;p[x*4+3]=1;}}return {frame,{}};
+        };
+        auto dialog=std::make_unique<ExportDialog>(QList<Export::Asset>{sample},0,&queue,nullptr,reader);QSignalSpy accepted(dialog.get(),&ExportDialog::previewSourceCached);dialog->show();
+        const auto image=[&]{return dialog->findChild<Canvas *>("export-preview")->presenter()->canonicalImage();};
+        QTRY_COMPARE_WITH_TIMEOUT(accepted.size(),1,10000);QTRY_VERIFY_WITH_TIMEOUT(!image().isNull(),10000);const auto first=image().copy();QCOMPARE(calls.load(),1);
+        document.layers[0].parameters.exposure=-1;++document.revision;sample.revision=document.revision;sample.document=std::make_shared<const LocalEdit::PhotoDocument>(document);dialog->replaceAssets({sample},0);
+        QTRY_COMPARE_WITH_TIMEOUT(accepted.size(),2,10000);QTRY_VERIFY_WITH_TIMEOUT(image()!=first,10000);QCOMPARE(calls.load(),2);const auto second=image().copy();
+        sample.document=std::make_shared<const LocalEdit::PhotoDocument>(document);dialog->replaceAssets({sample},0);QTRY_COMPARE_WITH_TIMEOUT(accepted.size(),3,10000);QCOMPARE(calls.load(),2);QCOMPARE(image(),second);dialog.reset();
+    }
     void actualRawCloseCancelsAfterDevelopMilestone(){
         const auto path=qEnvironmentVariable("LUMINA_WORKER_SAMPLE");if(QFileInfo(path).suffix().compare("cr3",Qt::CaseInsensitive)!=0)QSKIP("Set a private R7 CR3 for native cancellation verification.");
         QTemporaryDir root;QVERIFY(root.isValid());const auto old=qgetenv("LUMINA_EXPORT_DATA_DIR");const bool had=qEnvironmentVariableIsSet("LUMINA_EXPORT_DATA_DIR");qputenv("LUMINA_EXPORT_DATA_DIR",root.path().toUtf8());

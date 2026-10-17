@@ -1,5 +1,6 @@
 #pragma once
 #include "core/document.h"
+#include "core/photo_document.h"
 #include <QJsonObject>
 #include <QList>
 #include <QString>
@@ -24,15 +25,17 @@ struct Settings {
     Collision collision=Collision::Number; Metadata metadata=Metadata::Camera; bool gps=false;
     int after=0; // results, open folder, inspect
 };
-struct Asset { QString path,hash; Recipe recipe; quint64 revision=0; bool selected=false,kept=false; };
+struct Asset { QString path,hash; Recipe recipe; quint64 revision=0; bool selected=false,kept=false;
+    LocalEdit::DocumentSnapshot document; };
 struct Job { QString id,source,hash,path; quint64 revision=0; Recipe recipe; Settings settings;
-    Status status=Status::Pending; QString error,stage; };
+    Status status=Status::Pending; QString error,stage; LocalEdit::DocumentSnapshot document; };
 struct Result { bool ok=false,cancelled=false,skipped=false; QString error,path; QSize size; };
 struct Profile { QString name,path; QByteArray icc; Mode mode=Mode::Rgb; };
 QJsonObject settingsJson(const Settings &s);
 bool settingsFromJson(const QJsonObject &json,Settings &s,QString &error);
 QJsonObject jobJson(const Job &job);
 bool jobFromJson(const QJsonObject &json,Job &job,QString &error);
+bool validateJobDocument(const Job &job,QString &error);
 QString extension(Format format);
 QString statusText(Status status);
 QString validate(const Settings &settings);

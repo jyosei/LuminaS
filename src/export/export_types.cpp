@@ -13,6 +13,7 @@ namespace Export {
 namespace {
 
 constexpr int kVersion=1;
+constexpr int kJobVersion=2;
 constexpr int kMaximumAssets=2000;
 constexpr quint64 kMaximumPixels=45000000ULL;
 constexpr double kMaximumMillimetres=25400.0; // 25.4 m
@@ -320,9 +321,53 @@ bool settingsFromJson(const QJsonObject &json,Settings &settings,QString &error)
     settings=parsed;return true;
 }
 
+namespace {
+bool sameSourcePath(const QString &a,const QString &b){
+#ifdef Q_OS_WIN
+    return a.compare(b,Qt::CaseInsensitive)==0;
+#else
+    return a==b;
+#endif
+}
+
+bool normalizedSourcePath(const QString &path,QString &clean){
+    clean.clear();
+    if(path.isEmpty()||path.contains(QChar(0))||!QDir::isAbsolutePath(path))return false;
+    clean=QDir::cleanPath(path);
+    return QDir::isAbsolutePath(clean);
+}
+
+} // namespace
+
+bool validateJobDocument(const Job &job,QString &error){
+    error.clear();
+    if(!job.document)return true;
+    const LocalEdit::PhotoDocument &document=*job.document;
+    if(!LocalEdit::validDocument(document,error,true))return false;
+    QString clean,source;
+    if(!normalizedSourcePath(document.asset.sourcePath,clean)||!normalizedSourcePath(job.source,source)||!sameSourcePath(clean,source)){
+        error=QStringLiteral("局部文档源文件路径与任务不一致");return false;}
+    if(document.asset.sourceHash.compare(job.hash,Qt::CaseInsensitive)!=0){
+        error=QStringLiteral("局部文档源文件哈希与任务不一致");return false;}
+    if(!(document.global==job.recipe)){error=QStringLiteral("局部文档全局调整与任务不一致");return false;}
+    if(document.revision!=job.revision){error=QStringLiteral("局部文档修订号与任务不一致");return false;}
+    if(document.asset.raw!=(job.source.endsWith(QStringLiteral(".cr3"),Qt::CaseInsensitive))){
+        error=QStringLiteral("局部文档 RAW 标记与源文件类型不一致");return false;}
+    return true;
+}
+
 QJsonObject jobJson(const Job &job){
     QJsonObject json;
-    json.insert(QStringLiteral("version"),kVersion);
+    if(job.document){
+        QString error;
+        if(!validateJobDocument(job,error))return {};
+        const auto document=LocalEdit::documentJson(*job.document,error);
+        if(document.isEmpty())return {};
+        json.insert(QStringLiteral("document"),document);
+    }else{
+        json.insert(QStringLiteral("document"),QJsonValue::Null);
+    }
+    json.insert(QStringLiteral("version"),kJobVersion);
     json.insert(QStringLiteral("id"),job.id);
     json.insert(QStringLiteral("source"),job.source);
     json.insert(QStringLiteral("hash"),job.hash);
@@ -342,7 +387,20 @@ bool jobFromJson(const QJsonObject &json,Job &job,QString &error){
     int version=0;
     if(!readInt(json,QStringLiteral("version"),version,error))return false;
     if(json.value(QStringLiteral("version")).isUndefined()){error=QStringLiteral("任务缺少版本字段");return false;}
-    if(version!=kVersion){error=QStringLiteral("不支持的任务版本 %1").arg(version);return false;}
+    if(version!=1&&version!=kJobVersion){error=QStringLiteral("不支持的任务版本 %1").arg(version);return false;}
+    if(version==1&&!json.value(QStringLiteral("document")).isUndefined()&&!json.value(QStringLiteral("document")).isNull()){
+        error=QStringLiteral("旧版任务不支持局部编辑文档");return false;
+    }
+    if(version==kJobVersion){
+        const auto value=json.value(QStringLiteral("document"));
+        if(value.isUndefined()){error=QStringLiteral("任务缺少局部编辑文档字段");return false;}
+        if(!value.isNull()){
+            if(!value.isObject()){error=QStringLiteral("任务局部编辑文档不是对象");return false;}
+            LocalEdit::PhotoDocument document;
+            if(!LocalEdit::documentFromJson(value.toObject(),document,error,true))return false;
+            parsed.document=std::make_shared<const LocalEdit::PhotoDocument>(std::move(document));
+        }
+    }
     if(!json.value(QStringLiteral("recipe")).isObject()){error=QStringLiteral("任务缺少调整参数");return false;}
     if(!json.value(QStringLiteral("settings")).isObject()){error=QStringLiteral("任务缺少导出设置");return false;}
     if(!readString(json,QStringLiteral("id"),parsed.id,error))return false;
@@ -367,6 +425,7 @@ bool jobFromJson(const QJsonObject &json,Job &job,QString &error){
     if(!QRegularExpression(QStringLiteral("^[0-9a-fA-F]{64}$")).match(parsed.hash).hasMatch()){error=QStringLiteral("任务缺少源文件哈希");return false;}
     if(parsed.path.trimmed().isEmpty()&&parsed.status!=Status::Skipped){error=QStringLiteral("任务缺少输出路径");return false;}
     if(!QDir::isAbsolutePath(parsed.source)||(parsed.status!=Status::Skipped&&!QDir::isAbsolutePath(parsed.path))){error=QStringLiteral("任务路径必须是绝对路径");return false;}
+    if(!validateJobDocument(parsed,error))return false;
     job=parsed;return true;
 }
 
@@ -388,6 +447,14 @@ QList<Job> freeze(const QList<Asset> &assets,const Settings &settings,QString &e
         entry.path=QDir::cleanPath(canonical);
         if(!QRegularExpression(QStringLiteral("^[0-9a-fA-F]{64}$")).match(entry.hash).hasMatch()){error=QStringLiteral("缺少源文件哈希，无法冻结：%1").arg(info.fileName());return {};}
         if(!validRecipe(entry.recipe)){error=QStringLiteral("调整参数无效：%1").arg(info.fileName());return {};}
+        LocalEdit::DocumentSnapshot document;
+        if(entry.document){
+            Job binding;binding.source=entry.path;binding.hash=entry.hash;binding.recipe=entry.recipe;binding.revision=entry.revision;binding.document=entry.document;
+            if(!validateJobDocument(binding,error))return {};
+            auto copy=*entry.document;copy.asset.sourcePath=entry.path;
+            document=std::make_shared<const LocalEdit::PhotoDocument>(std::move(copy));
+        }
+        entry.document=document;
         const auto key=entry.path.toLower();
         if(sources.contains(key)){error=QStringLiteral("同一源文件在本次导出中重复：%1").arg(info.fileName());return {};}
         sources.insert(key);
@@ -422,6 +489,7 @@ QList<Job> freeze(const QList<Asset> &assets,const Settings &settings,QString &e
                 Job job;
                 job.id=QUuid::createUuid().toString(QUuid::WithoutBraces);
                 job.source=asset.path;job.hash=asset.hash;job.revision=asset.revision;job.recipe=asset.recipe;job.settings=settings;
+                job.document=asset.document;
                 job.status=Status::Skipped;
                 job.error=QStringLiteral("同名文件已存在，按策略跳过");
                 jobs.append(job);
@@ -438,6 +506,7 @@ QList<Job> freeze(const QList<Asset> &assets,const Settings &settings,QString &e
         Job job;
         job.id=QUuid::createUuid().toString(QUuid::WithoutBraces);
         job.source=asset.path;job.hash=asset.hash;job.revision=asset.revision;job.recipe=asset.recipe;job.settings=settings;
+        job.document=asset.document;
         job.path=output;job.status=Status::Pending;
         planned.insert(output.toLower());
         jobs.append(job);
