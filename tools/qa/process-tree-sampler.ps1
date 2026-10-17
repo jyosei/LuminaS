@@ -43,6 +43,7 @@ function Get-DiskObservation {
     }
     return [pscustomobject]@{roots=@($diskRoots.ToArray());bytes=$bytes;files=$files;entries=$entries;truncated=$truncated;errors=@($issues.ToArray())}
 }
+$startedUnixMs=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $watch=[Diagnostics.Stopwatch]::StartNew()
 $known=@{};$samples=[Collections.Generic.List[object]]::new();$errors=[Collections.Generic.List[string]]::new()
 $initialIdentity=$null
@@ -95,7 +96,7 @@ while($null -ne $initialIdentity -and $watch.Elapsed.TotalSeconds -lt $Seconds -
     $remaining=$IntervalMs-$sampleWatch.ElapsedMilliseconds;if($remaining -gt 0){Start-Sleep -Milliseconds $remaining}
 }
 if($null -eq $initialIdentity){$stopReason='root-identity-unavailable'}elseif($samples.Count -ge 15000){$stopReason='sample-cap'}
-$report=[ordered]@{schemaVersion=1;rootProcessId=$RootProcessId;rootCreatedUtcTicks=$initialIdentity;intervalMs=$IntervalMs;elapsedMs=$watch.ElapsedMilliseconds;stopReason=$stopReason;sampleCount=$samples.Count;sampledPeakObservedWorkingSetBytes=$peakWorking;sampledPeakObservedPrivateBytes=$peakPrivate;sampledPeakDiskBytes=$peakDisk;remainingKnownAlive=$lastAlive;errors=@($errors.ToArray());limitations=@('Sampled observations, not continuous peaks.','Short-lived or already-orphaned descendants between samples can be missed.','Topology/identity failures remain explicit; partial totals are not complete tree totals.','Working set aggregation can count shared pages more than once.','Disk entry/link checks are observational, not protection against adversarial path races.');samples=@($samples.ToArray())}
+$report=[ordered]@{schemaVersion=1;startedUnixMs=$startedUnixMs;rootProcessId=$RootProcessId;rootCreatedUtcTicks=$initialIdentity;intervalMs=$IntervalMs;elapsedMs=$watch.ElapsedMilliseconds;stopReason=$stopReason;sampleCount=$samples.Count;sampledPeakObservedWorkingSetBytes=$peakWorking;sampledPeakObservedPrivateBytes=$peakPrivate;sampledPeakDiskBytes=$peakDisk;remainingKnownAlive=$lastAlive;errors=@($errors.ToArray());limitations=@('Sampled observations, not continuous peaks.','Short-lived or already-orphaned descendants between samples can be missed.','Topology/identity failures remain explicit; partial totals are not complete tree totals.','Working set aggregation can count shared pages more than once.','Disk entry/link checks are observational, not protection against adversarial path races.');samples=@($samples.ToArray())}
 $temporary=$target+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
 try{
     [IO.File]::WriteAllText($temporary,($report|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
