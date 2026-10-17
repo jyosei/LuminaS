@@ -37,6 +37,7 @@ void Window::setupProjectPersistence(QMenu *menu,const QString &root){
     action(QStringLiteral("保存项目…"),"project-save","Ctrl+S",[this]{chooseProjectSave();});
     action(QStringLiteral("项目另存为…"),"project-save-as","Ctrl+Shift+S",[this]{chooseProjectSave(true);});
     action(QStringLiteral("恢复会话…"),"project-recover",{},[this]{chooseProjectOpen(true);});
+    auto *relinkAction=action(QStringLiteral("恢复当前照片链接…"),"project-relink",{},[this]{chooseSourceRelink();});relinkAction->setEnabled(false);
     action(QStringLiteral("重试恢复写入"),"project-recovery-retry",{},[this]{if(projectPersistence){syncProjectSnapshot();projectPersistence->retryRecovery();}});
     if(root.isEmpty()){refreshProjectStatus();return;}
     projectStatus->setText(QStringLiteral("准备恢复存储…"));
@@ -49,7 +50,7 @@ void Window::setupProjectPersistence(QMenu *menu,const QString &root){
         connect(projectPersistence,&ProjectPersistence::changed,this,&Window::refreshProjectStatus);
         connect(projectPersistence,&ProjectPersistence::completed,this,[this](const PersistenceResult &result){
             if(projectClosing)return;
-            const bool load=result.operation==PersistenceOperation::ProjectLoad||result.operation==PersistenceOperation::RecoveryLoad;
+            const bool load=result.operation==PersistenceOperation::ProjectLoad||result.operation==PersistenceOperation::RecoveryLoad||result.operation==PersistenceOperation::SourceRelink;
             if(load){
                 projectLoading=false;setEnabled(true);
                 if(result.error.isEmpty()&&result.state)applyProjectLoad(result);
@@ -118,12 +119,28 @@ bool Window::openProjectFile(const QString &path,bool recovery,QString &error){
     if(!projectPersistence->open(path,recovery,error)){projectLoading=false;return false;}
     editor->resetImports();loader->invalidate();setEnabled(false);return true;
 }
+bool Window::relinkCurrentSource(const QString &newPath,QString &error){
+    if(!projectPersistence||projectLoading||current<0){error=QStringLiteral("项目存储未就绪或没有当前照片");return false;}
+    endControlEdit();finishLocalEdits();syncProjectSnapshot();
+    const auto document=history.snapshot(photos[current].path);
+    if(!document||document->asset.sourceHash.isEmpty()){error=QStringLiteral("当前照片尚无完整源身份，不能恢复链接");return false;}
+    projectLoading=true;
+    if(!projectPersistence->relink(document->asset.id,newPath,error)){projectLoading=false;return false;}
+    editor->resetImports();loader->invalidate();setEnabled(false);return true;
+}
+void Window::chooseSourceRelink(){
+    if(current<0)return;
+    const auto path=QFileDialog::getOpenFileName(this,QStringLiteral("选择与记录指纹一致的原图"),QFileInfo(photos[current].path).absolutePath(),QStringLiteral("照片 (*.jpg *.jpeg *.cr3 *.JPG *.JPEG *.CR3)"));
+    if(path.isEmpty())return;
+    QString error;if(!relinkCurrentSource(path,error))QMessageBox::warning(this,QStringLiteral("无法恢复链接"),error);
+}
 void Window::applyProjectLoad(const PersistenceResult &result){
     const auto state=result.state;if(!state||!state->project)return;
     if(!result.loadedHistory){statusBar()->showMessage(QStringLiteral("项目历史尚未验证，未替换当前状态"),12000);return;}
     EditHistory replacement=*result.loadedHistory;QString error;
     const auto nextJournal=QDir(projectRoot).filePath(newId()+".luminas-recovery.json");
-    if(!projectPersistence->reset(state,nextJournal,result.operation==PersistenceOperation::ProjectLoad,error)){statusBar()->showMessage(error,12000);return;}
+    const bool clean=result.operation==PersistenceOperation::ProjectLoad||(result.operation==PersistenceOperation::SourceRelink&&state->project->revision==projectRevision&&!projectPersistence->dirty());
+    if(!projectPersistence->reset(state,nextJournal,clean,error)){statusBar()->showMessage(error,12000);return;}
     projectApplying=true;editor->resetImports();cancelLocalEdits();invalidatePresetStrength();
     history=std::move(replacement);current=-1;displayed.clear();known.clear();photos.clear();
     sourceBlocks.clear();importErrors.clear();
@@ -160,6 +177,7 @@ void Window::applyProjectLoad(const PersistenceResult &result){
 }
 void Window::refreshProjectStatus(){
     if(!projectStatus)return;
+    if(auto *action=findChild<QAction *>("project-relink"))action->setEnabled(projectPersistence&&!projectLoading&&current>=0&&sourceBlocks.contains(photos[current].path));
     if(!projectPersistence){projectStatus->setText(QStringLiteral("本次会话"));projectStatus->setToolTip(QStringLiteral("当前窗口未启用项目存储"));return;}
     const auto state=projectPersistence->state();
     const auto title=state&&!state->explicitPath.isEmpty()?QFileInfo(state->explicitPath).fileName():QStringLiteral("未命名项目");

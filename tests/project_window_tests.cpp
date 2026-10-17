@@ -131,6 +131,34 @@ private slots:
         bool canceled=false;QTimer::singleShot(50,&w,[&]{auto *dialog=qobject_cast<QMessageBox *>(QApplication::activeModalWidget());if(dialog){canceled=true;dialog->button(QMessageBox::Cancel)->click();}});
         QVERIFY(!w.close());QVERIFY(canceled);QVERIFY(w.isVisible());QCOMPARE(hash(root),QString::fromLatin1(QCryptographicHash::hash(QByteArray("x"),QCryptographicHash::Sha256).toHex()));
     }
+    void actualSampleProjectReplay(){
+        const auto sample=qEnvironmentVariable("LUMINA_D1_SAMPLE");if(sample.isEmpty())QSKIP("Set LUMINA_D1_SAMPLE for private R7 project replay.");
+        QVERIFY(QFileInfo(sample).isAbsolute());QVERIFY(QFile::exists(sample));const auto sourceHash=hash(sample);QVERIFY(!sourceHash.isEmpty());
+        QTemporaryDir dir;QVERIFY(dir.isValid());const auto target=dir.filePath("r7.luminas");
+        DocumentSnapshot frozen;QByteArray expectedPixels;QString error;
+        const auto pixels=[](const QImage &image){return QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char *>(image.constBits()),image.sizeInBytes()),QCryptographicHash::Sha256).toHex();};
+        {
+            Window w(nullptr,QStringLiteral(""),dir.filePath("recovery"));w.show();QVERIFY(QTest::qWaitForWindowExposed(&w));QVERIFY(ready(w));
+            w.addFiles({sample});QVERIFY(parsed(w,1));auto recipe=w.currentRecipe();recipe.exposure=.3;recipe.crop={.1,.1,.8,.8};w.applyRecipe(recipe);
+            QVERIFY(waitFor([&]{return w.neutralPickerAvailable();}));QSignalSpy renders(w.findChild<EditLoader *>(),&EditLoader::ready);
+            const auto settled=[&]{if(renders.isEmpty()||!w.currentPhotoDocument())return false;const auto frame=qvariant_cast<EditResult>(renders.last()[0]);return !frame.tag.interactive&&frame.error.isEmpty()&&frame.document&&frame.document->layers==w.currentPhotoDocument()->layers&&frame.recipe==w.currentRecipe();};
+            w.findChild<QTabWidget *>("adjustment-scope-tabs")->setCurrentIndex(1);w.findChild<QPushButton *>("local-new-brush")->click();
+            QVERIFY(waitFor([&]{return settled()&&w.findChild<Canvas *>()->brushMode();}));
+            auto *canvas=w.findChild<Canvas *>();canvas->brushPressed({.5,.5},false);canvas->brushMoved({.55,.55});canvas->brushFinished(false);
+            QVERIFY(waitFor(settled));auto *local=w.findChild<QDoubleSpinBox *>("local-exposure");QVERIFY(local);local->setValue(.25);QMetaObject::invokeMethod(local,"editingFinished",Qt::DirectConnection);
+            QVERIFY(waitFor(settled));frozen=w.currentPhotoDocument();QVERIFY(frozen);QCOMPARE(frozen->layers.size(),1);QVERIFY(!frozen->layers[0].mask.components.isEmpty());
+            const auto image=canvas->presenter()->canonicalImage();QCOMPARE(qMax(image.width(),image.height()),3840);expectedPixels=pixels(image);QVERIFY(!expectedPixels.isEmpty());
+            w.mark(Pick::Keep);QSignalSpy saved(storage(w),&ProjectPersistence::completed);QVERIFY2(w.saveProjectFile(target,error),qPrintable(error));QVERIFY(completion(saved,PersistenceOperation::ProjectSave));QVERIFY(!storage(w)->dirty());
+        }
+        {
+            Window w(nullptr,QStringLiteral(""),dir.filePath("restored"));w.show();QVERIFY(QTest::qWaitForWindowExposed(&w));QVERIFY(ready(w));
+            QSignalSpy loaded(storage(w),&ProjectPersistence::completed);QVERIFY2(w.openProjectFile(target,false,error),qPrintable(error));QVERIFY(completion(loaded,PersistenceOperation::ProjectLoad));
+            QVERIFY(parsed(w,1));QCOMPARE(w.pickAt(0),Pick::Keep);QVERIFY(w.currentPhotoDocument());QCOMPARE(w.currentPhotoDocument()->global,frozen->global);QCOMPARE(w.currentPhotoDocument()->layers,frozen->layers);
+            const auto image=w.findChild<Canvas *>()->presenter()->canonicalImage();QCOMPARE(qMax(image.width(),image.height()),3840);QCOMPARE(pixels(image),expectedPixels);
+            QTest::qWait(600);QVERIFY(!storage(w)->dirty());QCOMPARE(hash(sample),sourceHash);
+            qInfo()<<"R7 project replay"<<QFileInfo(sample).fileName()<<"sourceSha"<<sourceHash<<"previewSha"<<expectedPixels<<"sourceSize"<<frozen->asset.normalizedSize<<"previewSize"<<image.size();
+        }
+    }
 };
 QTEST_MAIN(ProjectWindowTests)
 #include "project_window_tests.moc"

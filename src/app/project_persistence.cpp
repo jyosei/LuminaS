@@ -87,6 +87,12 @@ bool ProjectPersistence::open(const QString &path,bool recovery,QString &error){
     idle.stop();recoveryDue=false;dispatch();return true;
 }
 void ProjectPersistence::retryRecovery(){if(latest&&dirty()){recoveryDue=true;idle.stop();dispatch();}}
+bool ProjectPersistence::relink(const QString &assetId,const QString &newPath,QString &error){
+    error.clear();if(!latest||!validPath(newPath)||assetId.isEmpty())return reject(error,QStringLiteral("没有可恢复链接的项目照片或新路径无效"));
+    PersistenceJob job;job.operation=PersistenceOperation::SourceRelink;job.path=newPath;job.assetId=assetId;job.state=latest;
+    if(!enqueue(std::move(job),error))return false;
+    idle.stop();recoveryDue=false;dispatch();return true;
+}
 void ProjectPersistence::cancel(){
     cancellation.cancel();pending.reset();idle.stop();recoveryDue=false;
     if(editSerial<std::numeric_limits<quint64>::max())++editSerial;

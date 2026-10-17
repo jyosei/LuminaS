@@ -7,11 +7,11 @@
 #include <functional>
 #include <optional>
 
-enum class PersistenceOperation {RecoverySave,ProjectSave,ProjectLoad,RecoveryLoad};
+enum class PersistenceOperation {RecoverySave,ProjectSave,ProjectLoad,RecoveryLoad,SourceRelink};
 struct PersistenceJob {
     PersistenceOperation operation=PersistenceOperation::RecoverySave;
     LocalEdit::RecoverySnapshot state;
-    QString path,expectedHash;
+    QString path,expectedHash,assetId;
     quint64 epoch=0,editSerial=0;
     CancellationToken cancel;
 };
@@ -42,6 +42,7 @@ public:
     bool update(LocalEdit::RecoverySnapshot state,QString &error);
     bool save(const QString &path,QString &error);
     bool open(const QString &path,bool recovery,QString &error);
+    bool relink(const QString &assetId,const QString &newPath,QString &error);
     void retryRecovery();
     void cancel();
     bool busy() const{return running.has_value();}

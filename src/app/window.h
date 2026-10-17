@@ -68,6 +68,7 @@ public:
     LocalEdit::DocumentSnapshot currentPhotoDocument() const;
     bool saveProjectFile(const QString &path,QString &error);
     bool openProjectFile(const QString &path,bool recovery,QString &error);
+    bool relinkCurrentSource(const QString &newPath,QString &error);
     QString projectRecoveryPath() const;
 signals:
     void previewChanged(const QString &path, bool success);
@@ -82,6 +83,7 @@ private:
     void refreshProjectStatus();
     void chooseProjectSave(bool saveAs=false);
     void chooseProjectOpen(bool recovery=false);
+    void chooseSourceRelink();
     bool confirmProjectReplacement();
     bool bindPreparedAsset(const EditResult &result);
     ProjectPersistence *projectPersistence=nullptr;

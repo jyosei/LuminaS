@@ -33,11 +33,28 @@ PersistenceResult ProjectPersistence::perform(const PersistenceJob &job){
         state.explicitPath=job.path;state.explicitHash=hash;
     }else if(job.operation==PersistenceOperation::RecoveryLoad){
         if(!LocalEdit::loadRecovery(job.path,state,hash,error,job.cancel))return fail(error);
+    }else if(job.operation==PersistenceOperation::SourceRelink){
+        const auto previous=job.state?LocalEdit::freezeRecovery(*job.state,error):LocalEdit::RecoverySnapshot{};
+        if(!previous)return fail(error);
+        QString oldPath;for(const auto &photo:previous->project->photos)if(photo.document->asset.id==job.assetId)oldPath=photo.document->asset.sourcePath;
+        LocalEdit::ProjectSnapshot updated;
+        if(!LocalEdit::relinkProjectSource(previous->project,job.assetId,job.path,updated,error,job.cancel))return fail(error);
+        QString boundPath;for(const auto &photo:updated->photos)if(photo.document->asset.id==job.assetId)boundPath=photo.document->asset.sourcePath;
+        state=*previous;state.project=updated;
+        for(auto &path:state.order)if(path==oldPath)path=boundPath;
+        if(state.activePath==oldPath)state.activePath=boundPath;
     }else return fail(QStringLiteral("未知项目操作"));
     if(isCanceled(job.cancel))return fail(QStringLiteral("操作已取消"));
     const auto frozen=LocalEdit::freezeRecovery(state,error);if(!frozen)return fail(error);
     QVector<LocalEdit::SourceStatus> sources;
     if(!LocalEdit::inspectProjectSources(frozen->project,sources,error,job.cancel))return fail(error);
+    if(job.operation==PersistenceOperation::SourceRelink){
+        bool available=false;
+        for(const auto &source:sources)if(source.assetId==job.assetId){available=source.state==LocalEdit::SourceState::Available;hash=source.actualHash;}
+        // The core primitive's same-path no-op must still verify a restored
+        // source. Never unlock Changed/Missing just because its name matches.
+        if(!available)return fail(QStringLiteral("选择的文件不匹配已记录的源指纹，未恢复链接"));
+    }
     QList<LocalEdit::DocumentSnapshot> documents;for(const auto &photo:frozen->project->photos)documents<<photo.document;
     auto history=std::make_shared<EditHistory>();if(!history->resetDocuments(documents,error))return fail(error);
     if(isCanceled(job.cancel))return fail(QStringLiteral("操作已取消"));
