@@ -1,6 +1,10 @@
 # D2 RAW 进程实现接线合同
 
-2026-10-17，GPT 架构决定。**尚未实现/验证**。本合同接续 S3-ARCHITECTURE 的 RAW worker v1；不改变解码算法、色彩空间、全源输出或生产 GPU。D1最后完整回归在运行，D2不是以此文档宣称完成。
+2026-10-17，GPT 架构决定。本合同接续 S3-ARCHITECTURE 的 RAW worker v1；不改变解码算法、色彩空间、全源输出或生产 GPU。**D2仍未完成**：协议、二进制帧、CLI及父端第一片已实现，生产路径尚未切换。D1最后完整回归67/67通过。
+
+当前切片：所有目标构建exit0，完整70/70（420.72秒）通过。真实R7 JPEG/CR3在CLI的全源及4K Prepare与原核逐像素SHA相同、矩阵/WB与原片SHA保持，整套对照分别38.013/42.751秒；父端跨进程对照也通过，分别36.163/42.316秒，不能当单次读取基准。默认CTest跳过需显式样片路径的私有用例，实照由GPT另行验证，详见S3-D2-FOUNDATION-RESULTS.md。
+
+父端采用后台串行槽、固定同目录程序、派发前Job Object、取消/超时回收、私有会话及退出后大帧导入。基础实际宿主嵌套Job接线已随client测试运行；故障注入/父进程强杀/进程树与资源审计、生产EditLoader接线、完整几何支持、孤儿会话清理仍未验/未完成，不能据CLI或父端基础测试宣布D2收口。
 
 ## 实施次序与不可替代项
 
@@ -31,7 +35,7 @@ DecodeFull阶段父端等子进程真正退出后再分配/导入全幅QImage，
 
 QProcess在已有后台任务的线程中创建和使用。GUI只更新tag/取消token，不做阻塞wait。后台client可小步等待并检查共享token，等待串行槽同样可取消。允许一个RAW在途，不建立无界子进程队列。
 
-worker解码期间仍须读取Cancel。可让主线程保留现有同步源核、独立控制线程读取stdin，仅把Cancel/协议错误/EOF映射到共享原子取消状态，不从控制线程触碰GUI或可变图像。Done/Error之后父端关闭stdin，控制线程读到EOF后退出并join；异常退出的阻塞输入需要明确终止/回收方案，不能留下join死锁或随意detach访问已释放对象。
+worker主线程保留现有同步源核、独立控制线程读取stdin，仅把Cancel/协议错误/EOF映射到共享原子取消状态，不从控制线程触碰GUI或可变图像。实际测试发现CancelSynchronousIo不能让当前宿主的空管道读取按500ms期限退出，Done已发出仍exit3；该失败已保留。当前改用单消费者PeekNamedPipe，只读取已报告可用的字节，空管道Sleep(2)并重查停止标志。Done/Error之后父端关闭stdin；即使父端保持输入打开，stop也应退出并join。500ms退出保护仍保留，超时明确失败并终止自身，不detach；不声称CancelSynchronousIo已实测有效。
 
 父端先使旧tag无效，发送Cancel，给有界短宽限期，再终止进程树兜底。LibRaw回调读取消token，不宣称open/unpack每阶段都可立刻协作结束。Worker启动后、派发Decode前先分配Windows Job Object并设置KILL_ON_JOB_CLOSE；分配失败则拒绝解码并终止子进程，不假称已有子进程树保护，不采用breakaway绕开宿主限制。嵌套Job的宿主兼容性要实际验证。
 

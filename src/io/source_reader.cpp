@@ -1,4 +1,5 @@
 #include "source_reader.h"
+#include "raw/source_kernel.h"
 #include "preview_size.h"
 #include "color/color_pipeline.h"
 #include <libraw/libraw.h>
@@ -47,11 +48,12 @@ static QByteArray jpegIcc(const QString &path,QString &error) {
     if(total!=segments.size()){error="Incomplete ICC";return {};}
     QByteArray result;for(int i=1;i<=total;++i)result+=segments[i];return result;
 }
-FrameResult readSource(const QString &path,double warmth,double tint,const CancellationToken &cancel) {
+FrameResult readSourceKernel(const QString &path,double warmth,double tint,const CancellationToken &cancel,const SourceReadProgress &progress) {
     if(isCanceled(cancel))return {{},"Canceled"};
     QElapsedTimer phase;phase.start();QJsonObject stages;
-    const auto phaseDone=[&](const char *name){stages.insert(name,double(phase.elapsed()));phase.restart();};
+    const auto phaseDone=[&](const char *name){stages.insert(name,double(phase.elapsed()));phase.restart();if(progress)progress(QString::fromLatin1(name).chopped(2),1,1);};
     auto frame=std::make_shared<SourceFrame>(); frame->path=path;
+    if(progress)progress(QStringLiteral("hashBefore"),0,1);
     const auto before=hashFile(path,cancel);if(isCanceled(cancel))return {{},"Canceled"};if(before.isEmpty())return {{},QStringLiteral("无法读取源文件")};
     phaseDone("hashBeforeMs");
     frame->sha256=QString::fromLatin1(before);
@@ -78,8 +80,12 @@ FrameResult readSource(const QString &path,double warmth,double tint,const Cance
         p.use_camera_wb=0;p.use_auto_wb=0;p.use_camera_matrix=1;p.user_qual=3;p.half_size=0;
         p.highlight=1;p.adjust_maximum_thr=0;p.bright=1;p.user_flip=-1;
 #ifdef Q_OS_WIN
+        if(progress)progress(QStringLiteral("rawOpen"),0,1);
+        if(isCanceled(cancel))return {{},"Canceled"};
         int code=raw.open_file(reinterpret_cast<const wchar_t *>(path.utf16()));
 #else
+        if(progress)progress(QStringLiteral("rawOpen"),0,1);
+        if(isCanceled(cancel))return {{},"Canceled"};
         int code=raw.open_file(QFile::encodeName(path).constData());
 #endif
         auto failure=[&](int status){return FrameResult{{},isCanceled(cancel)?QStringLiteral("Canceled"):QStringLiteral("RAW 输入失败：")+LibRaw::strerror(status)};};
@@ -95,9 +101,13 @@ FrameResult readSource(const QString &path,double warmth,double tint,const Cance
         multipliers[1]*=std::exp2(tint);multipliers[3]*=std::exp2(tint);
         const double normalization=*std::max_element(multipliers,multipliers+4)/ *std::min_element(multipliers,multipliers+4);
         for(int c=0;c<4;++c)p.user_mul[c]=float(multipliers[c]);
+        if(progress)progress(QStringLiteral("rawUnpack"),0,1);
+        if(isCanceled(cancel))return {{},"Canceled"};
         if((code=raw.unpack())!=LIBRAW_SUCCESS)return failure(code);
         if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawUnpackMs");
+        if(progress)progress(QStringLiteral("rawDevelop"),0,1);
+        if(isCanceled(cancel))return {{},"Canceled"};
         if((code=raw.dcraw_process())!=LIBRAW_SUCCESS)return failure(code);
         if(isCanceled(cancel))return {{},"Canceled"};
         phaseDone("rawDevelopMs");
@@ -150,4 +160,7 @@ FrameResult readSource(const QString &path,double warmth,double tint,const Cance
     frame->facts.insert("elapsedMs",double(timer.elapsed()));
     frame->facts.insert("width",frame->linear.width());frame->facts.insert("height",frame->linear.height());
     frame->originalSize=frame->linear.size();return {frame,{}};
+}
+FrameResult readSource(const QString &path,double warmth,double tint,const CancellationToken &cancel){
+    return readSourceKernel(path,warmth,tint,cancel);
 }
