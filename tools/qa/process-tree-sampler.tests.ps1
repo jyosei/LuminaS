@@ -4,6 +4,8 @@ $sampler=Join-Path $PSScriptRoot 'process-tree-sampler.ps1'
 $engine=Join-Path $PSHOME 'pwsh.exe';if(-not (Test-Path -LiteralPath $engine)){$engine=Join-Path $PSHOME 'powershell.exe'}
 $root=Join-Path ([IO.Path]::GetTempPath()) ('luminas-sampler-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($root)
+$secondRoot=$root+'-second';[void][IO.Directory]::CreateDirectory($secondRoot)
+[IO.File]::WriteAllBytes((Join-Path $secondRoot 'owned.bin'),[byte[]]@(1,2,3,4,5,6))
 $holder=$null;$childIdentity=$null;$summary=$null
 function Assert-True($condition,[string]$message){if(-not $condition){throw $message}}
 function Assert-Rejected([scriptblock]$action,[string]$message){$rejected=$false;try{& $action}catch{$rejected=$true};Assert-True $rejected $message}
@@ -27,7 +29,7 @@ Start-Sleep -Seconds 25
     $wait=[Diagnostics.Stopwatch]::StartNew();while(-not [IO.File]::Exists($marker) -and $wait.Elapsed.TotalSeconds -lt 10){Start-Sleep -Milliseconds 50}
     Assert-True ([IO.File]::Exists($marker)) 'Synthetic child did not start'
     $childIdentity=Get-Content -LiteralPath $marker -Raw|ConvertFrom-Json
-    & $sampler -RootProcessId $holder.Id -ReportPath $report -Seconds 4 -IntervalMs 500 -OwnedDiskRoot $root
+    & $sampler -RootProcessId $holder.Id -ReportPath $report -Seconds 4 -IntervalMs 500 -OwnedDiskRoot @($root,$secondRoot)
     $data=Get-Content -LiteralPath $report -Raw|ConvertFrom-Json
     Assert-True ($data.schemaVersion -eq 1 -and $data.sampleCount -gt 0) 'No samples'
     $withChild=@($data.samples|Where-Object {@($_.processes|Where-Object {$_.identity -like "$($childIdentity.id)/*"}).Count -gt 0})
@@ -38,11 +40,14 @@ Start-Sleep -Seconds 25
         [long]$sum=0;foreach($process in $sample.processes){Assert-True ($process.privateBytes -gt 0) 'Invalid process memory';$sum+=$process.privateBytes}
         Assert-True ($sum -eq $sample.observedPrivateBytes) 'Tree private-memory sum differs'
         Assert-True ($sample.disk.files -ge 2 -and $sample.disk.bytes -gt 0) 'Owned disk count missing'
+        Assert-True ($sample.disk.roots.Count -eq 2) 'Separate disk roots missing'
     }
     $original=[IO.File]::ReadAllBytes($report)
     Assert-Rejected {& $sampler -RootProcessId $holder.Id -ReportPath $report -Seconds 1} 'Existing report was accepted'
     Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes($report)) -eq [Convert]::ToBase64String($original)) 'Existing report changed'
     Assert-Rejected {& $sampler -RootProcessId 0 -ReportPath (Join-Path $root 'bad.json')} 'Invalid PID was accepted'
+    Assert-Rejected {& $sampler -RootProcessId $holder.Id -ReportPath (Join-Path $root 'bad.json') -OwnedDiskRoot @($root,$root)} 'Duplicate roots were accepted'
+    Assert-Rejected {& $sampler -RootProcessId $holder.Id -ReportPath (Join-Path $root 'bad.json') -OwnedDiskRoot ([IO.Path]::GetPathRoot($root))} 'Drive root was accepted'
     Assert-Rejected {& $sampler -RootProcessId 2147483647 -ReportPath (Join-Path $root 'missing.json') -Seconds 1} 'Missing process was accepted'
     $missing=Get-Content -LiteralPath (Join-Path $root 'missing.json') -Raw|ConvertFrom-Json
     Assert-True ($missing.stopReason -eq 'root-identity-unavailable' -and $missing.sampleCount -eq 0 -and $missing.errors.Count -gt 0) 'Missing process diagnostic was suppressed'
@@ -53,5 +58,6 @@ Start-Sleep -Seconds 25
     # Fixed files only; unknown entries keep the owned directory for inspection.
     foreach($name in @('holder.ps1','child.json','report.json','missing.json','bad.json')){$file=Join-Path $root $name;if([IO.File]::Exists($file)){[IO.File]::Delete($file)}}
     try{[IO.Directory]::Delete($root)}catch{Write-Warning ('Owned test directory retained: '+$root)}
+    [IO.File]::Delete((Join-Path $secondRoot 'owned.bin'));[IO.Directory]::Delete($secondRoot)
 }
 $summary|ConvertTo-Json

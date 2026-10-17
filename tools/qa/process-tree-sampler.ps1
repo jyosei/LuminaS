@@ -5,23 +5,27 @@ param(
     [Parameter(Mandatory)][string]$ReportPath,
     [ValidateRange(1,3600)][int]$Seconds=120,
     [ValidateRange(250,5000)][int]$IntervalMs=1000,
-    [string]$OwnedDiskRoot=''
+    [string[]]$OwnedDiskRoot=@()
 )
 $ErrorActionPreference='Stop'
 function Get-IdentityTicks([datetime]$time){ [long]$ticks=$time.ToUniversalTime().Ticks; return $ticks-($ticks%10) } # CIM retains microseconds.
 $target=[IO.Path]::GetFullPath($ReportPath)
 if(Test-Path -LiteralPath $target){throw 'Report already exists'}
 if(-not [IO.Directory]::Exists([IO.Path]::GetDirectoryName($target))){throw 'Report parent must exist'}
-$diskRoot=''
-if($OwnedDiskRoot){
-    $directory=Get-Item -LiteralPath $OwnedDiskRoot -Force
+$diskRoots=[Collections.Generic.List[string]]::new()
+foreach($requestedRoot in $OwnedDiskRoot){
+    $directory=Get-Item -LiteralPath $requestedRoot -Force
     if(-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Disk root must be a real directory'}
     $diskRoot=$directory.FullName
     if($diskRoot.TrimEnd('\','/') -eq [IO.Path]::GetPathRoot($diskRoot).TrimEnd('\','/')){throw 'Drive root is forbidden'}
+    foreach($existingRoot in $diskRoots){
+        if($diskRoot.Equals($existingRoot,[StringComparison]::OrdinalIgnoreCase) -or $diskRoot.StartsWith($existingRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $existingRoot.StartsWith($diskRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Overlapping disk roots are forbidden'}
+    }
+    $diskRoots.Add($diskRoot)
 }
 function Get-DiskObservation {
-    if(-not $diskRoot){return $null}
-    $pending=[Collections.Generic.Stack[string]]::new();$pending.Push($diskRoot)
+    if($diskRoots.Count -eq 0){return $null}
+    $pending=[Collections.Generic.Stack[string]]::new();foreach($diskRoot in $diskRoots){$pending.Push($diskRoot)}
     [long]$bytes=0;$entries=0;$files=0;$issues=[Collections.Generic.List[string]]::new();$truncated=$false
     while($pending.Count -gt 0 -and -not $truncated){
         $next=$pending.Pop()
@@ -37,7 +41,7 @@ function Get-DiskObservation {
             }
         }catch{$issues.Add('disk-query-failed: '+$_.Exception.GetType().Name)}
     }
-    return [pscustomobject]@{bytes=$bytes;files=$files;entries=$entries;truncated=$truncated;errors=@($issues.ToArray())}
+    return [pscustomobject]@{roots=@($diskRoots.ToArray());bytes=$bytes;files=$files;entries=$entries;truncated=$truncated;errors=@($issues.ToArray())}
 }
 $watch=[Diagnostics.Stopwatch]::StartNew()
 $known=@{};$samples=[Collections.Generic.List[object]]::new();$errors=[Collections.Generic.List[string]]::new()

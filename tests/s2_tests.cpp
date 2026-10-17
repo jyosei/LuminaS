@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QInputMethodEvent>
 #include <QDir>
+#include <QStandardPaths>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -666,6 +667,17 @@ void sharpenMaskRecipeAndHistory()
         const auto shot=qEnvironmentVariable("LUMINA_SPATIAL_SCREENSHOT");if(!shot.isEmpty()){w.findChild<QScrollArea *>()->ensureWidgetVisible(w.findChild<QDoubleSpinBox *>("clarity"));QTest::qWait(100);QVERIFY(w.grab().save(shot));}
     }
     void spatialSteadyResources() {
+        // Optional sampler control, before importing. Keep this out of normal
+        // test runs and source identity; it contains paths/phase only, no pixels.
+        const auto control=qEnvironmentVariable("LUMINA_RESOURCE_CONTROL");
+        if(!control.isEmpty()){
+            const auto rawRoot=QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/raw-worker";QVERIFY(QDir().mkpath(rawRoot));
+            QFile file(control);QVERIFY(file.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+            file.write(QJsonDocument(QJsonObject{{"pid",double(QCoreApplication::applicationPid())},{"tempRoot",QDir::tempPath()},{"rawCacheRoot",rawRoot}}).toJson());file.close();
+            // Let the sampler attach before the RAW worker starts. This is a
+            // resource run, not an uninstrumented latency benchmark.
+            QTest::qWait(1500);
+        }
         const auto marker=qEnvironmentVariable("LUMINA_SPATIAL_STEADY_MARKER"),directory=QDir::fromNativeSeparators(qEnvironmentVariable("LUMINA_REAL_SAMPLES"));if(marker.isEmpty()||directory.isEmpty())QSKIP("Explicit private steady resource probe");QStringList paths;for(const auto &name:{"4X1A0705","4X1A9413","4X1A9579","4X1A9817","4X1A9827","4X1A9954"})paths<<directory+"/"+name+".CR3"<<directory+"/"+name+".JPG";Window w(nullptr,QStringLiteral(""));w.show();QVERIFY(openAllInspectorSections(w));auto *loader=w.findChild<EditLoader *>();int prepared=0,count=0;EditResult result;connect(loader,&EditLoader::prefetched,&w,[&](const EditResult &r){QVERIFY2(r.error.isEmpty(),qPrintable(r.error));++prepared;});connect(loader,&EditLoader::ready,&w,[&](const EditResult &r){result=r;++count;});w.addFiles(paths);QTRY_COMPARE_WITH_TIMEOUT(prepared,12,180000);
         count=0;w.activate(4);QTRY_VERIFY_WITH_TIMEOUT(count>0&&result.path==QFileInfo(paths[4]).canonicalFilePath(),90000);Recipe r;r.texture=.4;r.clarity=.3;count=0;w.applyRecipe(r);QTRY_VERIFY_WITH_TIMEOUT(count>0&&result.recipe==r,90000);QVERIFY(result.error.isEmpty());QVERIFY(!result.sourceRebuilt);QFile output(marker);QVERIFY(output.open(QIODevice::WriteOnly));output.write(QJsonDocument(QJsonObject{{"phase","steady_12_cached_one_spatial"},{"pid",double(QCoreApplication::applicationPid())},{"width",result.image.width()},{"height",result.image.height()},{"sourceScale",result.workFrame.sourcePixelsPerPixel}}).toJson());output.close();QTest::qWait(5000);
     }
