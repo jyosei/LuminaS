@@ -1,5 +1,7 @@
 #include "worker_client.h"
 #include "worker_payload.h"
+#include "worker_client_testing.h"
+#include "worker_session.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -24,7 +26,6 @@
 namespace RawWorker {
 namespace {
 std::timed_mutex slot;
-constexpr int timeoutMs=180000;
 QString sourceHash(const QString &path,const CancellationToken &cancel){
     QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};
     QCryptographicHash hash(QCryptographicHash::Sha256);
@@ -60,13 +61,15 @@ public:
 };
 #endif
 }
-FrameResult runWorker(const Request &request,const CancellationToken &cancel,const WorkerProgress &progress){
+static FrameResult runImpl(const Request &request,const CancellationToken &cancel,const WorkerProgress &progress,const Testing::Options *test){
     const auto fail=[](const QString &error){return FrameResult{{},error};};
     QString error;if(!validRequest(request,error))return fail(error);
     if(QCoreApplication::instance()&&QThread::currentThread()==QCoreApplication::instance()->thread())return fail(QStringLiteral("RAW进程只能在后台任务中运行"));
 #ifndef Q_OS_WIN
     return fail(QStringLiteral("当前平台尚未实现RAW进程隔离"));
 #else
+    const int timeoutMs=test?test->timeoutMs:180000;
+    if(timeoutMs<100||timeoutMs>180000)return fail(QStringLiteral("RAW测试期限无效"));
     QElapsedTimer clock;clock.start();
     std::unique_lock<std::timed_mutex> lock(slot,std::defer_lock);
     while(!lock.try_lock_for(std::chrono::milliseconds(10))){
@@ -75,22 +78,35 @@ FrameResult runWorker(const Request &request,const CancellationToken &cancel,con
     }
     if(isCanceled(cancel))return fail(QStringLiteral("已取消"));
     if(sourceHash(request.sourcePath,cancel)!=request.sourceHash)return fail(QStringLiteral("RAW源指纹与任务不匹配或不可读取"));
-    const auto executable=QCoreApplication::applicationDirPath()+QStringLiteral("/LuminaS-raw-worker.exe");
+    const auto executable=test?test->executable:QCoreApplication::applicationDirPath()+QStringLiteral("/LuminaS-raw-worker.exe");
+    if(!QDir::isAbsolutePath(executable))return fail(QStringLiteral("RAW程序路径必须为绝对路径"));
     if(!QFileInfo(executable).isFile())return fail(QStringLiteral("缺少同版本LuminaS-raw-worker.exe"));
     const auto cacheRoot=QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-    const auto root=cacheRoot+QStringLiteral("/raw-worker");
-    if(cacheRoot.isEmpty()||!QDir().mkpath(root)||QFileInfo(root).isSymLink())return fail(QStringLiteral("无法准备RAW私有会话目录"));
+    const auto root=test?test->sessionRoot:cacheRoot+QStringLiteral("/raw-worker");
+    if((!test&&cacheRoot.isEmpty())||!QDir::isAbsolutePath(root)||(test?!QFileInfo(root).isDir():!QDir().mkpath(root))||QFileInfo(root).isSymLink())return fail(QStringLiteral("无法准备RAW私有会话目录"));
+    cleanAbandonedSessions(root); // Only sealed, ended owners/workers in this root.
     QTemporaryDir session(root+QStringLiteral("/session-XXXXXX"));if(!session.isValid())return fail(QStringLiteral("无法创建RAW私有会话"));
-    Job job;QProcess process;process.setProgram(executable);process.setArguments({QStringLiteral("--session"),session.path()});
+    if(!recordSessionOwner(root,session.path(),request,error))return fail(error);
+    if(test&&test->sessionCreated){try{test->sessionCreated(session.path());}catch(...){return fail(QStringLiteral("RAW会话测试回调失败"));}}
+    Job job;QProcess process;process.setProgram(executable);
+    auto arguments=test?test->arguments:QStringList{};arguments<<QStringLiteral("--session")<<session.path();process.setArguments(arguments);
     process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args){args->flags|=CREATE_NO_WINDOW;});
     struct Guard {
-        QProcess &process;Job &job;
-        ~Guard(){job.terminate();if(process.state()!=QProcess::NotRunning){process.kill();process.waitForFinished(5000);}}
-    }guard{process,job};
+        QProcess &process;Job &job;QTemporaryDir &session;
+        ~Guard(){
+            job.terminate();if(process.state()!=QProcess::NotRunning){process.kill();process.waitForFinished(5000);}
+            QElapsedTimer drain;drain.start();while(!job.empty()&&drain.elapsed()<500)QThread::msleep(1);
+            // Never remove a session that a surviving process may still use.
+            // Owned orphan recovery is a separate, explicitly audited step.
+            if(process.state()!=QProcess::NotRunning||!job.empty())session.setAutoRemove(false);
+        }
+    }guard{process,job,session};
     process.start();if(!process.waitForStarted(5000))return fail(QStringLiteral("RAW进程启动失败：")+process.errorString());
     // Worker cannot decode before Request. Assign the actual process before any
     // request bytes are sent; nested-job rejection fails closed.
-    if(!job.attach(process.processId()))return fail(QStringLiteral("无法建立RAW进程树保护，已拒绝解码"));
+    if((test&&test->rejectJobAssignment)||!job.attach(process.processId()))return fail(QStringLiteral("无法建立RAW进程树保护，已拒绝解码"));
+    if(!recordSessionWorker(root,session.path(),process.processId(),error))return fail(error);
+    if(test&&test->started){try{test->started(process.processId());}catch(...){return fail(QStringLiteral("RAW启动测试回调失败"));}}
     QByteArray pending,diagnostics;bool helloReceived=false,requestSent=false,terminal=false;QJsonObject done;
     QString terminalError,protocolError;qint64 controlBytes=0;int messages=0;
     const auto accept=[&](const QJsonObject &message){
@@ -152,4 +168,6 @@ FrameResult runWorker(const Request &request,const CancellationToken &cancel,con
     return readPayload(session.path(),request,done,cancel);
 #endif
 }
+FrameResult runWorker(const Request &request,const CancellationToken &cancel,const WorkerProgress &progress){return runImpl(request,cancel,progress,nullptr);}
+FrameResult Testing::run(const Request &request,const Options &options,const CancellationToken &cancel,const WorkerProgress &progress){return runImpl(request,cancel,progress,&options);}
 }

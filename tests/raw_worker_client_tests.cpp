@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
+#include <QElapsedTimer>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QUuid>
@@ -63,6 +64,28 @@ private slots:
         const auto result=std::async(std::launch::async,[&]{return runWorker(large.request,cancel.token(),[&](const QString &phase,int,int){if(phase=="hashBefore"){childSeen=true;cancel.cancel();}});}).get();
         QVERIFY(childSeen);QVERIFY(!result.source);QVERIFY(!result.error.isEmpty());
         Fixture small;QVERIFY(small.init());const auto next=background(small.request);QVERIFY2(next.source,qPrintable(next.error));
+    }
+    void queuedCancellationDoesNotDispatch(){
+        Fixture first,second;QVERIFY(first.init()&&second.init());std::promise<void> entered,release;auto enteredFuture=entered.get_future();auto gate=release.get_future().share();bool signaled=false;
+        auto firstFuture=std::async(std::launch::async,[&]{return runWorker(first.request,{},[&](const QString &phase,int,int){if(phase=="hashBefore"&&!signaled){signaled=true;entered.set_value();gate.wait_for(std::chrono::seconds(5));}});});
+        struct Release {std::promise<void> &gate;bool released=false;void now(){if(!released){released=true;gate.set_value();}}~Release(){now();}}releaseGuard{release};
+        const auto ready=enteredFuture.wait_for(std::chrono::seconds(2));if(ready!=std::future_status::ready)releaseGuard.now();QVERIFY(ready==std::future_status::ready);
+        CancellationSource cancel;bool dispatched=false;QElapsedTimer clock;clock.start();
+        auto secondFuture=std::async(std::launch::async,[&]{return runWorker(second.request,cancel.token(),[&](const QString &,int,int){dispatched=true;});});
+        QTest::qWait(20);cancel.cancel();const auto canceled=secondFuture.wait_for(std::chrono::seconds(2));if(canceled!=std::future_status::ready)releaseGuard.now();
+        QVERIFY(canceled==std::future_status::ready);const auto result=secondFuture.get();QVERIFY(!result.source);QVERIFY(!result.error.isEmpty());QVERIFY(!dispatched);QVERIFY(clock.elapsed()<4000);
+        releaseGuard.now();const auto completed=firstFuture.get();QVERIFY2(completed.source,qPrintable(completed.error));
+    }
+    void actualRawStageCancellation(){
+        const auto sample=qEnvironmentVariable("LUMINA_WORKER_SAMPLE");if(QFileInfo(sample).suffix().compare("cr3",Qt::CaseInsensitive)!=0)QSKIP("Set a private CR3 sample to verify received RAW milestones.");
+        QFile file(sample);QVERIFY(file.open(QIODevice::ReadOnly));QCryptographicHash hash(QCryptographicHash::Sha256);QVERIFY(hash.addData(&file));file.close();const auto before=QString::fromLatin1(hash.result().toHex());
+        for(const auto phase:{"rawOpen","rawUnpack","rawDevelop","write"}){
+            Fixture f;QVERIFY(f.init());f.request.sourcePath=sample;f.request.sourceHash=before;CancellationSource cancel;bool observed=false;QElapsedTimer clock;clock.start();
+            const auto result=std::async(std::launch::async,[&]{return runWorker(f.request,cancel.token(),[&](const QString &name,int current,int){if(name==QLatin1String(phase)&&current==0){observed=true;cancel.cancel();}});}).get();
+            QVERIFY(observed);QVERIFY(!result.source);QVERIFY(!result.error.isEmpty());QVERIFY(clock.elapsed()<30000);qInfo()<<"RAW received milestone cancellation"<<phase<<"elapsedMs"<<clock.elapsed();
+            Fixture small;QVERIFY(small.init());const auto next=background(small.request);QVERIFY2(next.source,qPrintable(next.error));
+        }
+        QVERIFY(file.open(QIODevice::ReadOnly));QCryptographicHash after(QCryptographicHash::Sha256);QVERIFY(after.addData(&file));QCOMPARE(QString::fromLatin1(after.result().toHex()),before);
     }
     void actualSampleParentEquivalence(){
         const auto path=qEnvironmentVariable("LUMINA_WORKER_SAMPLE");if(path.isEmpty())QSKIP("Set LUMINA_WORKER_SAMPLE for parent/worker private sample validation.");
