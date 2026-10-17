@@ -34,7 +34,9 @@
 #include <QtConcurrentRun>
 using namespace Export;
 QString ExportDialog::dataDir() const{const auto override=qEnvironmentVariable("LUMINA_EXPORT_DATA_DIR");return override.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)+"/export":override;}
-ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *parent):QDialog(parent),exportQueue(queue),assets(std::move(input)),currentIndex(index){
+ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *parent):ExportDialog(std::move(input),index,queue,parent,{}){}
+ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *parent,PreviewReader reader):QDialog(parent),exportQueue(queue),assets(std::move(input)),currentIndex(index),previewReader(std::move(reader)){
+ if(!previewReader)previewReader=[](const QString &path,double warmth,double tint,const CancellationToken &token,const QString &hash){return readSource(path,warmth,tint,token,hash);};
  setObjectName("export-dialog");if(!parent)Ui::applyTheme(this,true);setWindowTitle(QStringLiteral("导出照片"));setAttribute(Qt::WA_DeleteOnClose);setWindowModality(Qt::NonModal);setMinimumSize(620,400);const auto available=screen()?screen()->availableGeometry().size():QSize(1120,800);resize(qMax(620,qMin(1080,available.width()-40)),qMax(400,qMin(740,available.height()-60)));pool.setMaxThreadCount(1);
  QString error;for(const auto &name:{"sRGB","Display P3","Adobe RGB","ProPhoto RGB"})profiles.append({QString::fromLatin1(name),{},builtinProfile(name,error),Mode::Rgb});profiles.append(installedProfiles());state.icc=profiles[0].icc;
  auto *layout=new QVBoxLayout(this);auto *body=new QHBoxLayout;layout->addLayout(body,1);left=new QWidget;auto *previewLayout=new QVBoxLayout(left);previewLayout->setContentsMargins(0,0,12,0);previewLabel=new QLabel(QStringLiteral("目标色彩预览"));previewLayout->addWidget(previewLabel);canvas=new Canvas;canvas->setObjectName("export-preview");canvas->setMessage(QStringLiteral("正在准备目标色彩预览…"));canvas->setMinimumSize(220,150);previewLayout->addWidget(canvas,1);summary=new QLabel;summary->setWordWrap(true);summary->setObjectName("export-summary");previewLayout->addWidget(summary);body->addWidget(left,1);
@@ -58,12 +60,16 @@ ExportDialog::ExportDialog(QList<Asset> input,int index,Queue *queue,QWidget *pa
  table=new QTableWidget(0,4);table->setObjectName("export-results");table->setHorizontalHeaderLabels({QStringLiteral("文件"),QStringLiteral("状态 / 阶段"),QStringLiteral("原因"),QStringLiteral("输出路径")});table->setEditTriggers(QAbstractItemView::NoEditTriggers);table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setSelectionMode(QAbstractItemView::SingleSelection);table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);table->horizontalHeader()->setStretchLastSection(true);table->setMaximumHeight(150);layout->addWidget(table);connect(table,&QTableWidget::cellDoubleClicked,this,[this]{inspectSelected();});
  auto *footer=new QHBoxLayout;layout->addLayout(footer);counts=new QLabel;counts->setObjectName("export-counts");footer->addWidget(counts,1);auto button=[&](QString label,const char *id){auto *b=new QPushButton(label);b->setObjectName(id);footer->addWidget(b);return b;};cancel=button(QStringLiteral("取消任务"),"export-cancel");retry=button(QStringLiteral("重试未完成"),"export-retry");folder=button(QStringLiteral("文件夹"),"export-open-folder");inspect=button(QStringLiteral("检查成片"),"export-inspect");start=button(QStringLiteral("开始导出"),"export-start");start->setDefault(true);start->setStyleSheet(QStringLiteral("QPushButton#export-start{background:palette(highlight);color:palette(highlighted-text);border:1px solid palette(highlight);font-weight:600;} QPushButton#export-start:hover{border-color:palette(text);} QPushButton#export-start:pressed{border:2px solid palette(text);} QPushButton#export-start:focus{border:2px solid palette(text);} QPushButton#export-start:disabled{background:palette(button);color:palette(mid);border-color:palette(mid);}"));connect(start,&QPushButton::clicked,this,&ExportDialog::startExport);connect(cancel,&QPushButton::clicked,exportQueue,&Queue::cancel);connect(retry,&QPushButton::clicked,this,[this]{QString e;if(!exportQueue->retry(e)||!exportQueue->start(e))diagnostic->setText(e);});connect(folder,&QPushButton::clicked,this,&ExportDialog::openFolder);connect(inspect,&QPushButton::clicked,this,&ExportDialog::inspectSelected);
  debounce.setSingleShot(true);debounce.setInterval(250);connect(&debounce,&QTimer::timeout,this,&ExportDialog::previewNow);
- connect(&previewWatcher,&QFutureWatcher<Preview>::finished,this,[this]{auto r=previewWatcher.result();if(r.index>=0&&!r.linear.isNull()){cachedIndex=r.index;cachedLinear=r.linear;cachedFull=r.full;assets[r.index].hash=r.hash;}if(r.generation==generation){if(r.image.isNull())canvas->setMessage(r.error);else canvas->setImage(r.image,QStringLiteral("export-preview"));}if(previewPending){previewPending=false;previewNow();}updateSummary();});
+ connect(&previewWatcher,&QFutureWatcher<Preview>::finished,this,[this]{auto r=previewWatcher.result();
+  const bool current=r.sourceGeneration==sourceGeneration&&r.index>=0&&r.index<assets.size()&&assets[r.index].path==r.path&&assets[r.index].recipe==r.recipe;
+  if(current&&!r.linear.isNull()){cachedIndex=r.index;cachedLinear=r.linear;cachedFull=r.full;assets[r.index].hash=r.hash;emit previewSourceCached(r.path,r.hash,r.sourceGeneration);}
+  if(current&&r.generation==generation){if(r.image.isNull())canvas->setMessage(r.error);else canvas->setImage(r.image,QStringLiteral("export-preview"));}
+  if(previewPending){previewPending=false;previewNow();}updateSummary();});
  connect(&preparationWatcher,&QFutureWatcher<Preparation>::finished,this,[this]{preparing=false;auto result=preparationWatcher.result();QString e=result.error;if(e.isEmpty()&&exportQueue->append(result.jobs,e)){persist(e);ownBatch=true;if(!exportQueue->start(e))ownBatch=false;}diagnostic->setText(e);updateResults();});
  connect(exportQueue,&Queue::changed,this,&ExportDialog::updateResults);connect(exportQueue,&Queue::finished,this,[this]{updateResults();if(ownBatch){ownBatch=false;if(state.after==1)openFolder();else if(state.after==2)inspectSelected();}});
  loadPresets();connect(preset,&QComboBox::activated,this,[this](int){auto n=preset->currentText();if(presets.contains(n))setSettings(presets[n]);});setSettings(state);updateResults();
 }
-ExportDialog::~ExportDialog(){disconnect(&previewWatcher,nullptr,this,nullptr);disconnect(&preparationWatcher,nullptr,this,nullptr);pool.clear();pool.waitForDone();}
+ExportDialog::~ExportDialog(){previewCancel.cancel();debounce.stop();disconnect(&previewWatcher,nullptr,this,nullptr);disconnect(&preparationWatcher,nullptr,this,nullptr);pool.clear();pool.waitForDone();}
 Settings ExportDialog::settings() const{
  auto s=state;s.format=Format(format->currentIndex());s.mode=Mode(mode->currentIndex());s.bits=bits->currentIndex()==1?16:8;s.quality=quality->value();s.zip=zip->isChecked();s.blackPoint=bpc->isChecked();s.intent=intent->currentIndex()==0?1:0;const int p=profile->currentData().toInt();if(p>=0&&p<profiles.size()){s.profileName=profiles[p].name;s.icc=profiles[p].icc;}else{s.profileName.clear();s.icc.clear();}s.sizeMode=SizeMode(sizeModeBox->currentIndex());s.width=widthValue->value();s.height=heightValue->value();s.percent=percent->value();s.ppi=ppi->value();s.dontEnlarge=dontEnlarge->isChecked();s.printCm=cm->isChecked();s.besideSource=beside->isChecked();s.subfolder=subfolder->text();s.directory=directory->text();s.sequence=sequence->isChecked();s.prefix=prefix->text();s.suffix=suffix->text();s.start=sequenceStart->value();s.collision=Collision(collision->currentIndex());s.metadata=Metadata(metadata->currentIndex());s.gps=gps->isChecked();s.after=after->currentIndex();return s;
 }
@@ -77,7 +83,7 @@ void ExportDialog::changed(){
  if(next.mode==Mode::Cmyk&&next.format!=Format::Tiff){next.format=Format::Tiff;notice=QStringLiteral("CMYK使用TIFF，已调整文件格式。");}
  if(next.profileName=="ProPhoto RGB"&&(next.bits!=16||next.format==Format::Jpeg)){next.bits=16;if(next.format==Format::Jpeg)next.format=Format::Tiff;notice=QStringLiteral("ProPhoto RGB要求16位，已调整格式/位深。");}
  if(next.format==Format::Jpeg&&next.bits!=8){next.bits=8;notice=QStringLiteral("JPEG仅支持8位，已调整位深。");}
- state=next;sync();quality->setEnabled(state.format==Format::Jpeg);zip->setEnabled(state.format==Format::Tiff);directory->setEnabled(!state.besideSource);subfolder->setEnabled(state.besideSource);prefix->setEnabled(state.sequence);sequenceStart->setEnabled(state.sequence);const int n=int(state.sizeMode);widthValue->setEnabled(n==1||n==3||n==5);heightValue->setEnabled(n==2||n==3||n==5);percent->setEnabled(n==4);cm->setEnabled(n==5);++generation;debounce.start();updateSummary();
+ state=next;sync();quality->setEnabled(state.format==Format::Jpeg);zip->setEnabled(state.format==Format::Tiff);directory->setEnabled(!state.besideSource);subfolder->setEnabled(state.besideSource);prefix->setEnabled(state.sequence);sequenceStart->setEnabled(state.sequence);const int n=int(state.sizeMode);widthValue->setEnabled(n==1||n==3||n==5);heightValue->setEnabled(n==2||n==3||n==5);percent->setEnabled(n==4);cm->setEnabled(n==5);if(previewWatcher.isRunning()&&activePreviewIndex!=representative())previewCancel.cancel();++generation;debounce.start();updateSummary();
 }
 QList<Asset> ExportDialog::targets() const{QList<Asset> result;for(int i=0;i<assets.size();++i)if((range->currentIndex()==0&&i==currentIndex)||(range->currentIndex()==1&&assets[i].selected)||(range->currentIndex()==2&&assets[i].kept))result.append(assets[i]);return result;}
 int ExportDialog::representative() const{const auto list=targets();if(list.isEmpty())return -1;for(int i=0;i<assets.size();++i)if(assets[i].path==list.first().path)return i;return -1;}
@@ -89,8 +95,15 @@ void ExportDialog::updateSummary(){
 }
 void ExportDialog::previewNow(){
  if(previewWatcher.isRunning()){previewPending=true;return;}const int i=representative();if(i<0){canvas->setMessage(QStringLiteral("没有可预览照片"));return;}QString e=validate(state);if(!e.isEmpty()){canvas->setMessage(e);return;}
- const auto a=assets[i];const auto s=state;const auto gen=generation;const auto cached=cachedIndex==i?cachedLinear:QImage();const auto full=cachedFull;if(cached.isNull())canvas->setMessage(QStringLiteral("正在准备目标色彩预览…"));canvas->setToolTip(QStringLiteral("目标ICC转换预览；完整质量以导出成片为准"));
- previewWatcher.setFuture(QtConcurrent::run(&pool,[a,s,gen,i,cached,full]{Preview r;r.index=i;r.generation=gen;r.linear=cached;r.full=full;r.hash=a.hash;if(r.linear.isNull()){auto source=readSource(a.path,a.recipe.warmth,a.recipe.tint);if(!source.source){r.error=source.error;return r;}r.hash=source.source->sha256;r.full=renderedSize(source.source->linear.size(),a.recipe);r.linear=renderLinear(*source.source,a.recipe,3840,r.error);}if(!r.linear.isNull())r.image=Export::preview(r.linear,s,r.error);return r;}));
+ const auto a=assets[i];const auto s=state;const auto gen=generation,sourceGen=sourceGeneration;const auto cached=cachedIndex==i?cachedLinear:QImage();const auto full=cachedFull;if(cached.isNull())canvas->setMessage(QStringLiteral("正在准备目标色彩预览…"));canvas->setToolTip(QStringLiteral("目标ICC转换预览；完整质量以导出成片为准"));
+ previewCancel=CancellationSource();const auto token=previewCancel.token();activePreviewIndex=i;
+ const auto reader=previewReader;
+ previewWatcher.setFuture(QtConcurrent::run(&pool,[a,s,gen,sourceGen,i,cached,full,token,reader]{
+  Preview r;r.index=i;r.generation=gen;r.sourceGeneration=sourceGen;r.path=a.path;r.recipe=a.recipe;r.linear=cached;r.full=full;r.hash=a.hash;
+  if(isCanceled(token)){r.error=QStringLiteral("已取消");return r;}
+  if(r.linear.isNull()){auto source=reader(a.path,a.recipe.warmth,a.recipe.tint,token,a.hash);if(!source.source){r.error=source.error;return r;}r.hash=source.source->sha256;r.full=renderedSize(source.source->linear.size(),a.recipe);r.linear=renderLinear(*source.source,a.recipe,3840,r.error,{},token);}
+  if(!r.linear.isNull()&&!isCanceled(token))r.image=Export::preview(r.linear,s,r.error,token.get());return r;
+ }));
 }
 void ExportDialog::startExport(){
  if(preparing||exportQueue->busy())return;emit refreshRequested();state=settings();const auto list=targets();QString e=validate(state);if(list.isEmpty())e=QStringLiteral("没有可导出的照片");if(!e.isEmpty()){diagnostic->setText(e);return;}preparing=true;start->setEnabled(false);diagnostic->setText(QStringLiteral("冻结照片与输出设置…"));const auto s=state;
@@ -98,8 +111,10 @@ void ExportDialog::startExport(){
 }
 void ExportDialog::replaceAssets(QList<Asset> input,int index){
  const int old=representative();const auto oldAsset=old>=0?assets[old]:Asset{};
+ previewCancel.cancel();++sourceGeneration;++generation;
  assets=std::move(input);currentIndex=index;const int now=representative();
- if(now<0||assets[now].path!=oldAsset.path||assets[now].recipe!=oldAsset.recipe){cachedIndex=-1;cachedLinear={};cachedFull={};++generation;debounce.start();}
+ if(now<0||assets[now].path!=oldAsset.path||assets[now].recipe!=oldAsset.recipe||assets[now].hash!=oldAsset.hash){cachedIndex=-1;cachedLinear={};cachedFull={};}else cachedIndex=cachedLinear.isNull()?-1:now;
+ debounce.start();
  updateSummary();
 }
 void ExportDialog::updateResults(){

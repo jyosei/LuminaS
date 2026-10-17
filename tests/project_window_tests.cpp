@@ -1,3 +1,4 @@
+#include "background_source.h"
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -64,7 +65,7 @@ private slots:
         QVERIFY2(restored.openProjectFile(legacyPath,false,error),qPrintable(error));QVERIFY(completion(loaded,PersistenceOperation::ProjectLoad));
         QVERIFY(parsed(restored,2));QCOMPARE(restored.currentIndex(),0);QCOMPARE(restored.currentRecipe(),r);QCOMPARE(restored.pickAt(0),Pick::Keep);
         QCOMPARE(restored.currentPhotoDocument()->layers,frozen->layers);
-        const auto source=readSource(a);QVERIFY2(source.source,qPrintable(source.error));
+        const auto source=readTestSource(a);QVERIFY2(source.source,qPrintable(source.error));
         QString renderError;const auto before=renderDocumentFullLinear(*source.source,*frozen,renderError);QVERIFY2(!before.isNull(),qPrintable(renderError));
         const auto after=renderDocumentFullLinear(*source.source,*restored.currentPhotoDocument(),renderError);QVERIFY2(!after.isNull(),qPrintable(renderError));
         QCOMPARE(after,before); // Actual full-source global + brush replay, not a 4K upsample.

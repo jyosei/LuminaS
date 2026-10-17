@@ -4,8 +4,6 @@
 #include "render/geometry_transform.h"
 #include "core/point_color_sampling.h"
 #include "io/source_reader.h"
-#include "raw/worker_client.h"
-#include <QUuid>
 #include "render/cpu_renderer.h"
 #include "render/local_renderer.h"
 #include "render/local_preview_cache.h"
@@ -20,10 +18,7 @@
 static QMutex fullSourceMutex;
 static FrameResult rawWorkerRead(const QString &path,const QString &hash,double warmth,double tint,
     const CancellationToken &cancel,const std::optional<Recipe> &geometry={}){
-    RawWorker::Request request;request.id=QUuid::createUuid().toString(QUuid::WithoutBraces);request.token=QUuid::createUuid().toString(QUuid::WithoutBraces);
-    request.sourcePath=path;request.sourceHash=hash;request.warmth=warmth;request.tint=tint;
-    if(geometry){request.operation=RawWorker::Operation::Prepare;request.geometry=*geometry;request.longEdge=3840;}
-    return RawWorker::runWorker(request,cancel);
+    return geometry?prepareSource(path,*geometry,warmth,tint,cancel,hash):readSource(path,warmth,tint,cancel,hash);
 }
 // A new request must not invalidate a still-valid same-generation interactive round trip:
 // those keep feeding the current slider drag. Everything else is superseded.

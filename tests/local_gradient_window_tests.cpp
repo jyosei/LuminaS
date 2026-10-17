@@ -1,3 +1,4 @@
+#include "background_source.h"
 #include <QtTest>
 #include <QCryptographicHash>
 #include <QComboBox>
@@ -98,7 +99,7 @@ private slots:
         }
         if(qEnvironmentVariableIsSet("LUMINA_GRADIENT_FULL_REPLAY")){
             const auto frozen=w.currentPhotoDocument();const auto frozenValue=*frozen;QElapsedTimer timer;timer.start();
-            const auto source=readSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);QVERIFY2(source.source,qPrintable(source.error));
+            const auto source=readTestSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);QVERIFY2(source.source,qPrintable(source.error));
             QCOMPARE(source.source->linear.size(),frozen->asset.normalizedSize);QCOMPARE(source.source->sha256,frozen->asset.sourceHash);
             QString error;auto full=renderDocumentFullLinear(*source.source,*frozen,error);QVERIFY2(!full.isNull(),qPrintable(error));
             QCOMPARE(full.size(),renderedSize(frozen->asset.normalizedSize,frozen->global));

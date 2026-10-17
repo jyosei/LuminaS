@@ -1,3 +1,4 @@
+#include "background_export.h"
 #include "export/export_engine.h"
 #include "export/export_metadata.h"
 #include "export/export_writer.h"
@@ -43,8 +44,8 @@ private slots:
         for(auto format:{Format::Jpeg,Format::Png,Format::Tiff})for(int bits:{8,16}){
             if(format==Format::Jpeg&&bits==16)continue;Settings s;s.format=format;s.bits=bits;s.besideSource=false;s.directory=dir.filePath("output");
             QString e;s.icc=builtinProfile("sRGB",e);auto jobs=freeze({{path,QString::fromLatin1(before),{},7}},s,e);QCOMPARE(jobs.size(),1);
-            auto r=execute(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QCOMPARE(r.size,QSize(321,201));auto check=readOutput(r.path,e);QVERIFY2(!check.isNull(),qPrintable(e));
-            QCOMPARE(digest(path),before);const auto outputHash=digest(r.path);auto again=execute(jobs[0]);QVERIFY(again.skipped);QCOMPARE(digest(r.path),outputHash);
+            auto r=executeTestJob(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QCOMPARE(r.size,QSize(321,201));auto check=readOutput(r.path,e);QVERIFY2(!check.isNull(),qPrintable(e));
+            QCOMPARE(digest(path),before);const auto outputHash=digest(r.path);auto again=executeTestJob(jobs[0]);QVERIFY(again.skipped);QCOMPARE(digest(r.path),outputHash);
             if(format!=Format::Tiff){QImageReader reader(r.path);auto img=reader.read();QCOMPARE(img.depth(),bits==16?64:32);QVERIFY(img.colorSpace().isValid());}
             else{
 #ifdef Q_OS_WIN
@@ -57,11 +58,11 @@ private slots:
             ++i;
         }QCOMPARE(i,5);
         Settings s;s.format=Format::Tiff;s.mode=Mode::Cmyk;s.bits=16;s.icc=cmyk();s.besideSource=false;s.directory=dir.filePath("cmyk");QString e;
-        auto jobs=freeze({{path,QString::fromLatin1(before),{},8}},s,e);QCOMPARE(jobs.size(),1);auto r=execute(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QVERIFY(!readOutput(r.path,e).isNull());
-        auto wrong=jobs[0];wrong.path=dir.filePath("changed.tif");wrong.hash=QString(64,'0');QVERIFY(!execute(wrong).ok);QVERIFY(!QFileInfo::exists(wrong.path));
-        wrong=jobs[0];wrong.path=path;QVERIFY(!execute(wrong).ok);QCOMPARE(digest(path),before);
-        std::atomic_bool cancelled{true};wrong.path=dir.filePath("cancel.tif");QVERIFY(execute(wrong,&cancelled).cancelled);QVERIFY(!QFileInfo::exists(wrong.path));
-        auto block=dir.filePath("block");QFile f(block);QVERIFY(f.open(QIODevice::WriteOnly));f.write("file");f.close();wrong.path=block+"/fail.tif";QVERIFY(!execute(wrong).ok);QCOMPARE(digest(path),before);
+        auto jobs=freeze({{path,QString::fromLatin1(before),{},8}},s,e);QCOMPARE(jobs.size(),1);auto r=executeTestJob(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QVERIFY(!readOutput(r.path,e).isNull());
+        auto wrong=jobs[0];wrong.path=dir.filePath("changed.tif");wrong.hash=QString(64,'0');QVERIFY(!executeTestJob(wrong).ok);QVERIFY(!QFileInfo::exists(wrong.path));
+        wrong=jobs[0];wrong.path=path;QVERIFY(!executeTestJob(wrong).ok);QCOMPARE(digest(path),before);
+        std::atomic_bool cancelled{true};wrong.path=dir.filePath("cancel.tif");QVERIFY(executeTestJob(wrong,&cancelled).cancelled);QVERIFY(!QFileInfo::exists(wrong.path));
+        auto block=dir.filePath("block");QFile f(block);QVERIFY(f.open(QIODevice::WriteOnly));f.write("file");f.close();wrong.path=block+"/fail.tif";QVERIFY(!executeTestJob(wrong).ok);QCOMPARE(digest(path),before);
     }
     void metadataAndDimensions(){
         QTemporaryDir dir;const auto path=sample(dir);PhotoMetadata m;m.make="Canon";m.model="Synthetic camera";m.artist="Artist";m.copyright="Copyright";m.date="2026:10:15 12:34:56";m.iso=400;m.exposure=1./125;m.aperture=2.8;m.focalLength=50;m.lens="Test lens";m.hasGps=true;m.latitude=31.23;m.longitude=121.47;m.altitude=12.5;
@@ -69,7 +70,7 @@ private slots:
         QString e;auto decoded=readMetadata(path,Metadata::Camera,true,e);QVERIFY2(e.isEmpty(),qPrintable(e));QCOMPARE(decoded.make,m.make);QCOMPARE(decoded.iso,400);QVERIFY(decoded.hasGps);QVERIFY(qAbs(decoded.latitude-m.latitude)<1e-6);
         auto privacy=readMetadata(path,Metadata::Copyright,false,e);QCOMPARE(privacy.artist,m.artist);QVERIFY(privacy.make.isEmpty());QVERIFY(!privacy.hasGps);
         for(auto fmt:{Format::Jpeg,Format::Png,Format::Tiff}){Settings s;s.format=fmt;s.icc=builtinProfile("sRGB",e);s.besideSource=false;s.directory=dir.filePath(QString::number(int(fmt)));s.sizeMode=SizeMode::LongEdge;s.width=160;
-            auto jobs=freeze({{path,QString::fromLatin1(digest(path)),{},1}},s,e);QCOMPARE(jobs.size(),1);auto r=execute(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QCOMPARE(r.size,QSize(160,100));
+            auto jobs=freeze({{path,QString::fromLatin1(digest(path)),{},1}},s,e);QCOMPARE(jobs.size(),1);auto r=executeTestJob(jobs[0]);QVERIFY2(r.ok,qPrintable(r.error));QCOMPARE(r.size,QSize(160,100));
             if(fmt!=Format::Png){auto out=readMetadata(r.path,Metadata::Camera,true,e);QVERIFY2(e.isEmpty(),qPrintable(e));QCOMPARE(out.make,m.make);QVERIFY(!out.hasGps);}
         }
         Settings s;QCOMPARE(outputSize({6000,4000},s,e),QSize(6000,4000));s.ppi=72;QCOMPARE(outputSize({6000,4000},s,e),QSize(6000,4000));s.sizeMode=SizeMode::Fit;s.width=1000;s.height=1000;QCOMPARE(outputSize({6000,4000},s,e),QSize(1000,667));s.sizeMode=SizeMode::LongEdge;s.width=9999;QCOMPARE(outputSize({6000,4000},s,e),QSize(6000,4000));s.sizeMode=SizeMode::Print;s.width=254;s.height=254;s.ppi=100;QCOMPARE(outputSize({6000,4000},s,e),QSize(1000,667));
@@ -78,16 +79,16 @@ private slots:
     void shortWriteAndMidJobCancellation(){
         class FullDevice:public QBuffer { protected:qint64 writeData(const char *,qint64)override{setErrorString("No space left on device");return -1;} } full;
         QVERIFY(full.open(QIODevice::ReadWrite));Settings s;s.format=Format::Tiff;QString e;s.icc=builtinProfile("sRGB",e);auto pixels=convert(gradient(),s,e);QVERIFY(!pixels.data.isEmpty());QVERIFY(!writeTiff(full,pixels,s,{},e));QVERIFY(!e.isEmpty());
-        QTemporaryDir dir;const auto path=sample(dir);auto before=digest(path);s.besideSource=false;s.directory=dir.filePath("out");auto jobs=freeze({{path,QString::fromLatin1(before),{},0}},s,e);QCOMPARE(jobs.size(),1);std::atomic_bool cancel{false};auto r=execute(jobs[0],&cancel,[&](const QString &stage){if(stage==QStringLiteral("编码写入"))cancel=true;});QVERIFY(r.cancelled);QVERIFY(!QFileInfo::exists(jobs[0].path));QCOMPARE(digest(path),before);QVERIFY(QDir(s.directory).entryList({"*.tmp"},QDir::Files|QDir::Hidden).isEmpty());
+        QTemporaryDir dir;const auto path=sample(dir);auto before=digest(path);s.besideSource=false;s.directory=dir.filePath("out");auto jobs=freeze({{path,QString::fromLatin1(before),{},0}},s,e);QCOMPARE(jobs.size(),1);std::atomic_bool cancel{false};auto r=executeTestJob(jobs[0],&cancel,[&](const QString &stage){if(stage==QStringLiteral("编码写入"))cancel=true;});QVERIFY(r.cancelled);QVERIFY(!QFileInfo::exists(jobs[0].path));QCOMPARE(digest(path),before);QVERIFY(QDir(s.directory).entryList({"*.tmp"},QDir::Files|QDir::Hidden).isEmpty());
     }
     void cmykDepthCompressionGpsAndLongPath(){
         QTemporaryDir dir;QString e;const auto path=sample(dir);const auto original=digest(path);
         for(int bits:{8,16})for(bool zipped:{false,true}){
             Settings s;s.format=Format::Tiff;s.mode=Mode::Cmyk;s.bits=bits;s.zip=zipped;s.icc=cmyk();s.profileName="LCMS test CMYK";s.intent=zipped?0:1;s.besideSource=false;s.directory=dir.filePath("cmyk-"+QString::number(bits)+QString::number(zipped));
-            auto jobs=freeze({{path,QString::fromLatin1(original),{},0}},s,e);QCOMPARE(jobs.size(),1);auto result=execute(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));QVERIFY(!readOutput(result.path,e).isNull());
+            auto jobs=freeze({{path,QString::fromLatin1(original),{},0}},s,e);QCOMPARE(jobs.size(),1);auto result=executeTestJob(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));QVERIFY(!readOutput(result.path,e).isNull());
         }
         Settings s;s.format=Format::Tiff;s.bits=16;s.icc=builtinProfile("sRGB",e);s.besideSource=false;s.directory=dir.path();while(s.directory.size()<280)s.directory+="/long-export-folder-123456789";
-        auto jobs=freeze({{path,QString::fromLatin1(original),{},0}},s,e);QCOMPARE(jobs.size(),1);auto result=execute(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));QVERIFY(!readOutput(result.path,e).isNull());QCOMPARE(digest(path),original);
+        auto jobs=freeze({{path,QString::fromLatin1(original),{},0}},s,e);QCOMPARE(jobs.size(),1);auto result=executeTestJob(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));QVERIFY(!readOutput(result.path,e).isNull());QCOMPARE(digest(path),original);
         // Verify TIFF channel/bit-depth/ICC/EXIF/GPS tags using LibTIFF itself.
         PhotoMetadata m;m.hasGps=true;m.latitude=-33.86;m.longitude=151.2;m.altitude=10;m.iso=800;m.copyright="Test copyright";
         QBuffer buffer;QVERIFY(buffer.open(QIODevice::ReadWrite));auto pixels=convert(gradient(),s,e);s.gps=true;QVERIFY2(writeTiff(buffer,pixels,s,m,e),qPrintable(e));
@@ -101,7 +102,7 @@ private slots:
             const auto p=dir.filePath("synthetic-45mp.jpg");QVERIFY(image.save(p,"JPEG",98));paths.append(p);image={};
             QImage over(9001,5000,QImage::Format_RGB32);over.fill(Qt::gray);const auto pOver=dir.filePath("over-45mp.jpg");QVERIFY(over.save(pOver,"JPEG"));over={};QVERIFY(!readSource(pOver).source);
         }
-        int index=0;for(const auto &path:paths){const auto original=digest(path);QVERIFY(!original.isEmpty());Settings s;s.format=Format::Tiff;s.bits=16;s.profileName="ProPhoto RGB";QString e;s.icc=builtinProfile(s.profileName,e);s.besideSource=false;s.directory=dir.filePath(QString::number(index++));Recipe recipe;recipe.exposure=.25;auto jobs=freeze({{path,QString::fromLatin1(original),recipe,1}},s,e);QCOMPARE(jobs.size(),1);QElapsedTimer timer;timer.start();auto result=execute(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));qInfo()<<"full source export"<<QFileInfo(path).fileName()<<result.size<<"elapsedMs"<<timer.elapsed();QCOMPARE(digest(path),original);}
+        int index=0;for(const auto &path:paths){const auto original=digest(path);QVERIFY(!original.isEmpty());Settings s;s.format=Format::Tiff;s.bits=16;s.profileName="ProPhoto RGB";QString e;s.icc=builtinProfile(s.profileName,e);s.besideSource=false;s.directory=dir.filePath(QString::number(index++));Recipe recipe;recipe.exposure=.25;auto jobs=freeze({{path,QString::fromLatin1(original),recipe,1}},s,e);QCOMPARE(jobs.size(),1);QElapsedTimer timer;timer.start();auto result=executeTestJob(jobs[0]);QVERIFY2(result.ok,qPrintable(result.error));qInfo()<<"full source export"<<QFileInfo(path).fileName()<<result.size<<"elapsedMs"<<timer.elapsed();QCOMPARE(digest(path),original);}
     }
 };
 QTEST_MAIN(ExportEngineTests)

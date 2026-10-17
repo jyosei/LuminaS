@@ -1,3 +1,4 @@
+#include "../source_read_support.h"
 #include "io/source_reader.h"
 #include "render/cpu_renderer.h"
 #include <QCoreApplication>
@@ -21,7 +22,7 @@ int main(int argc,char **argv){
     Recipe recipe;if(args.size()==4){QFile f(args[3]);if(!f.open(QIODevice::ReadOnly))return 2;QJsonParseError error;auto json=QJsonDocument::fromJson(f.readAll(),&error);if(error.error!=QJsonParseError::NoError||!json.isObject())return 2;recipe=recipeFromJson(json.object());}
     if(!validRecipe(recipe))return 2;
     const auto prefix=args[2];for(const auto &suffix:{"-preview.png","-full.png",".json"})if(QFile::exists(prefix+suffix)){qCritical("Output already exists");return 2;}
-    QElapsedTimer timer;timer.start();auto source=readSource(args[1],recipe.warmth,recipe.tint);if(!source.error.isEmpty()){qCritical().noquote()<<source.error;return 1;}
+    QElapsedTimer timer;timer.start();auto source=readProbeSource(args[1],recipe.warmth,recipe.tint);if(!source.error.isEmpty()){qCritical().noquote()<<source.error;return 1;}
     QJsonObject report{{"sourceSha256",source.source->sha256},{"facts",source.source->facts},{"recipe",recipeJson(recipe)},{"sourceReadMs",double(timer.elapsed())}};
     for(int edge:{3840,0}){
         const auto result=renderFrame(*source.source,recipe,edge);if(!result.error.isEmpty()){qCritical().noquote()<<result.error;return 1;}

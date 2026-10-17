@@ -1,3 +1,4 @@
+#include "../source_read_support.h"
 // LuminaS local-replay-probe: standalone bounded verification probe.
 // Reports exactly one JSON object on stdout. Writes no files.
 #include "core/document.h"
@@ -313,7 +314,7 @@ int main(int argc, char **argv) {
     } else {
         const QString before = sha256File(argument);
         if (before.isEmpty()) { emitReport(fail(QStringLiteral("cannot hash source"))); return 1; }
-        const FrameResult loaded = readSource(argument, 0, 0);
+        const FrameResult loaded = readProbeSource(argument, 0, 0);
         if (!loaded.source) { emitReport(fail(loaded.error.isEmpty() ? QStringLiteral("source read failed") : loaded.error)); return 1; }
         const SourceFrame &frame = *loaded.source;
         if(frame.sha256!=before){emitReport(fail("Source changed during decode"));return 1;}

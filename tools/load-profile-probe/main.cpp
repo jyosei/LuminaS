@@ -1,3 +1,4 @@
+#include "../source_read_support.h"
 #include "app/window.h"
 #include "io/source_reader.h"
 #include "io/preview_cache.h"
@@ -25,7 +26,7 @@ int main(int argc,char **argv){
     if(args[3]=="pipeline"){
         QElapsedTimer phase;phase.start();SourceFrame proxy;QString error;
         {
-            const auto read=readSource(path);report.insert("readTotalMs",double(phase.elapsed()));
+            const auto read=readProbeSource(path);report.insert("readTotalMs",double(phase.elapsed()));
             if(!read.source||!read.error.isEmpty()){report.insert("error",read.error);}
             else{
                 report.insert("readStages",read.source->facts.value("readStages"));phase.restart();proxy=*read.source;

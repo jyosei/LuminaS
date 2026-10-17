@@ -4,7 +4,8 @@
 #include <QDateTime>
 #include <QSet>
 #include <QtEndian>
-#include <libraw/libraw.h>
+#include "io/source_metadata_codec.h"
+#include "raw/source_metadata.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -77,23 +78,13 @@ quint32 appendIfd(QByteArray &b,QList<Entry> entries,QMap<quint16,quint32> *posi
     return offset;
 }
 }
-PhotoMetadata readMetadata(const QString &source,Metadata policy,bool gps,QString &error){
+PhotoMetadata readMetadata(const QString &source,Metadata policy,bool gps,QString &error,const SourceMetadataSnapshot *rawSnapshot){
     error.clear();PhotoMetadata m;if(policy==Metadata::None&&!gps)return m;
     if(QFileInfo(source).suffix().compare("cr3",Qt::CaseInsensitive)==0){
-        LibRaw raw;int code;
-#ifdef Q_OS_WIN
-        code=raw.open_file(reinterpret_cast<const wchar_t *>(source.utf16()));
-#else
-        code=raw.open_file(QFile::encodeName(source).constData());
-#endif
-        if(code!=LIBRAW_SUCCESS){error=QStringLiteral("RAW元数据读取失败");return {};}
-        const auto &o=raw.imgdata.other;const auto bounded=[](const char *v,size_t n){return QString::fromUtf8(v,int(strnlen(v,n))).left(2048);};
-        m.make=bounded(raw.imgdata.idata.make,sizeof(raw.imgdata.idata.make));m.model=bounded(raw.imgdata.idata.model,sizeof(raw.imgdata.idata.model));
-        m.artist=bounded(o.artist,sizeof(o.artist));m.lens=bounded(raw.imgdata.lens.Lens,sizeof(raw.imgdata.lens.Lens));
-        m.exposure=o.shutter;m.aperture=o.aperture;m.focalLength=o.focal_len;m.iso=int(o.iso_speed);
-        if(o.timestamp>0)m.date=QDateTime::fromSecsSinceEpoch(o.timestamp).toString("yyyy:MM:dd HH:mm:ss");
-        cr3Copyright(source,m);
-        const auto &g=o.parsed_gps;if(g.gpsparsed){m.latitude=(g.latitude[0]+g.latitude[1]/60.+g.latitude[2]/3600.)*(g.latref=='S'?-1:1);m.longitude=(g.longitude[0]+g.longitude[1]/60.+g.longitude[2]/3600.)*(g.longref=='W'?-1:1);m.altitude=g.altitude*(g.altref?-1:1);m.hasGps=std::isfinite(m.latitude)&&std::isfinite(m.longitude)&&std::abs(m.latitude)<=90&&std::abs(m.longitude)<=180;}
+        if(!rawSnapshot){error=QStringLiteral("RAW元数据必须来自已校验的隔离源读取");return {};}
+        if(rawSnapshot->sourcePath!=QFileInfo(source).absoluteFilePath()||rawSnapshot->sourceHash.size()!=64){error=QStringLiteral("RAW元数据快照源身份不匹配");return {};}
+        for(const auto c:rawSnapshot->sourceHash)if(!((c>='0'&&c<='9')||(c>='a'&&c<='f'))){error=QStringLiteral("RAW元数据快照指纹无效");return {};}
+        if(!validSourceMetadata(rawSnapshot->values,error))return {};m=rawSnapshot->values;
     }else{
         QFile f(source);if(!f.open(QIODevice::ReadOnly)){error=f.errorString();return {};}
         auto head=f.read(2);QByteArray tiff;
@@ -110,7 +101,7 @@ PhotoMetadata readMetadata(const QString &source,Metadata policy,bool gps,QStrin
         if(!tiff.isEmpty()){Parser parser{tiff};parser.read(m);if(!parser.good){error=QStringLiteral("损坏或超限的EXIF，未导出");return {};}}
     }
     if(policy!=Metadata::Camera){const auto artist=m.artist,copy=m.copyright;const bool has=m.hasGps;const auto lat=m.latitude,lon=m.longitude,alt=m.altitude;m={};if(policy==Metadata::Copyright){m.artist=artist;m.copyright=copy;}if(gps){m.hasGps=has;m.latitude=lat;m.longitude=lon;m.altitude=alt;}}
-    if(!gps)m.hasGps=false;return m;
+    if(!gps){m.hasGps=false;m.latitude=m.longitude=m.altitude=0;}return m;
 }
 QByteArray exifBlock(const PhotoMetadata &m,QSize output,double ppi){
     QByteArray b("II*\0\10\0\0\0",8);
@@ -128,3 +119,4 @@ QByteArray exifBlock(const PhotoMetadata &m,QSize output,double ppi){
     }return b;
 }
 }
+void RawWorker::enrichCopyright(const QString &path,SourceMetadata &metadata){Export::cr3Copyright(path,metadata);}

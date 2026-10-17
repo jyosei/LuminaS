@@ -49,13 +49,13 @@ QImage rgbImage(const Pixels &p){
     }
     result.setColorSpace(QColorSpace::fromIccProfile(p.icc));return result;
 }
-QImage toScreenRgb(const Pixels &p,QString &error){
+QImage toScreenRgb(const Pixels &p,QString &error,const std::atomic_bool *cancel=nullptr){
     ProfileOwner input{cmsOpenProfileFromMem(p.icc.constData(),cmsUInt32Number(p.icc.size()))},output{cmsCreate_sRGBProfile()};
     const auto type=p.channels==4?(p.bits==16?TYPE_CMYK_16:TYPE_CMYK_8):(p.bits==16?TYPE_RGB_16:TYPE_RGB_8);
     TransformOwner transform{input.p&&output.p?cmsCreateTransform(input.p,type,output.p,TYPE_RGBA_8,INTENT_RELATIVE_COLORIMETRIC,cmsFLAGS_NOCACHE|cmsFLAGS_NOOPTIMIZE):nullptr};
     if(!transform.p){error=QStringLiteral("成片ICC显示转换失败");return {};}
     QImage result(p.size,QImage::Format_RGBA8888);if(result.isNull()){error=QStringLiteral("成片显示分配失败");return {};}
-    for(int y=0;y<p.size.height();++y){cmsDoTransform(transform.p,p.data.constData()+qint64(y)*p.size.width()*p.channels*(p.bits/8),result.scanLine(y),p.size.width());auto *row=result.scanLine(y);for(int x=0;x<p.size.width();++x)row[x*4+3]=255;}
+    for(int y=0;y<p.size.height();++y){if(stopped(cancel)){error=QStringLiteral("已取消");return {};}cmsDoTransform(transform.p,p.data.constData()+qint64(y)*p.size.width()*p.channels*(p.bits/8),result.scanLine(y),p.size.width());auto *row=result.scanLine(y);for(int x=0;x<p.size.width();++x)row[x*4+3]=255;}
     result.setColorSpace(QColorSpace::SRgb);return result;
 }
 bool injectExif(const QString &path,Format format,const QByteArray &exif,QString &error){
@@ -170,7 +170,7 @@ Pixels convert(const QImage &linear,const Settings &s,QString &error,const std::
         cmsDoTransform(transform.p,row.data(),out.data.data()+y*stride,out.size.width());
     }return out;
 }
-QImage preview(const QImage &linear,const Settings &s,QString &error){auto pixels=convert(linear,s,error);if(pixels.data.isEmpty())return {};return toScreenRgb(pixels,error);}
+QImage preview(const QImage &linear,const Settings &s,QString &error,const std::atomic_bool *cancel){auto pixels=convert(linear,s,error,cancel);if(pixels.data.isEmpty())return {};return toScreenRgb(pixels,error,cancel);}
 Result execute(const Job &job,const std::atomic_bool *cancel,const Progress &progress){
     Result result;result.path=job.path;auto stage=[&](const QString &text){if(progress)progress(text);};
     const auto cancelled=[&]{if(stopped(cancel)){result.cancelled=true;result.error=QStringLiteral("已取消");return true;}return false;};
@@ -180,17 +180,21 @@ Result execute(const Job &job,const std::atomic_bool *cancel,const Progress &pro
     if(source.isEmpty()||job.hash.size()!=64||!validRecipe(job.recipe)){result.error=QStringLiteral("源文件、哈希或配方无效");return result;}
     if(QFileInfo(job.path).absoluteFilePath().compare(source,Qt::CaseInsensitive)==0){result.error=QStringLiteral("禁止覆盖原图");return result;}
     if(QFileInfo::exists(job.path)){result.skipped=true;result.error=QStringLiteral("目标已存在，未覆盖");return result;}
-    stage(QStringLiteral("读取原图"));auto frame=readSource(source,job.recipe.warmth,job.recipe.tint);
-    if(!frame.source){result.error=frame.error;return result;}
+    // The queue owns this atomic until synchronous execute returns; its
+    // destructor joins the pool. The token never escapes this call.
+    const CancellationToken sourceCancel=cancel?CancellationToken(cancel,[](const std::atomic_bool *){}):CancellationToken{};
+    stage(QStringLiteral("读取原图"));auto frame=readSource(source,job.recipe.warmth,job.recipe.tint,sourceCancel,job.hash);
+    if(!frame.source){if(cancelled())return result;result.error=frame.error;return result;}
     if(frame.source->sha256.compare(job.hash,Qt::CaseInsensitive)){result.error=QStringLiteral("源文件已变化，请重新创建导出任务");return result;}
     if(cancelled())return result;
-    stage(QStringLiteral("全尺寸渲染"));auto linear=renderLinear(*frame.source,job.recipe,0,result.error);frame.source.reset();if(linear.isNull())return result;
+    const SourceMetadataSnapshot metadataSnapshot{frame.source->path,frame.source->sha256,frame.source->deliveryMetadata};const bool hasMetadata=frame.source->hasDeliveryMetadata;
+    stage(QStringLiteral("全尺寸渲染"));auto linear=renderLinear(*frame.source,job.recipe,0,result.error,{},sourceCancel);frame.source.reset();if(linear.isNull()){cancelled();return result;}
     if(cancelled())return result;
     const auto target=outputSize(linear.size(),job.settings,result.error);if(!target.isValid())return result;
     if(target!=linear.size()){stage(QStringLiteral("调整输出尺寸"));linear=linear.scaled(target,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);if(linear.isNull()){result.error=QStringLiteral("缩放分配失败");return result;}}
     stage(QStringLiteral("转换目标色彩"));auto pixels=convert(linear,job.settings,result.error,cancel);linear={};if(pixels.data.isEmpty()){if(stopped(cancel))result.cancelled=true;return result;}
     if(cancelled())return result;
-    auto metadata=readMetadata(source,job.settings.metadata,job.settings.gps,result.error);if(!result.error.isEmpty())return result;
+    auto metadata=readMetadata(source,job.settings.metadata,job.settings.gps,result.error,hasMetadata?&metadataSnapshot:nullptr);if(!result.error.isEmpty())return result;
     const auto parent=QFileInfo(job.path).absolutePath();if(!QDir().mkpath(parent)){result.error=QStringLiteral("无法创建导出目录");return result;}
     QTemporaryFile temporary(parent+"/.luminas-XXXXXX.tmp");if(!temporary.open()){result.error=temporary.errorString();return result;}const auto temp=temporary.fileName();temporary.close();
     stage(QStringLiteral("编码写入"));bool encoded=false;

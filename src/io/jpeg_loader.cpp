@@ -4,7 +4,6 @@
 #include <QtConcurrentRun>
 #include <cmath>
 #include "preview_size.h"
-#include "raw/raw_decoder.h"
 #include <QFileInfo>
 #include <QElapsedTimer>
 
@@ -80,13 +79,9 @@ void JpegLoader::dispatch() {
     const auto request = active;
     watcher.setFuture(QtConcurrent::run(&pool, [request] {
         if (QFileInfo(request.path).suffix().compare("cr3",Qt::CaseInsensitive)==0) {
-            RawOptions options; options.longEdge = request.preview ? 3840 : 160;
-            options.collectLinearDiagnostics = false;
-#ifdef LUMINA_DIRECT_RAW_PREVIEW
-            options.directLinearPreview = true;
-#endif
-            const auto raw = developRaw(request.path,options);
-            return JpegResult{request.path,raw.error,QStringLiteral("LibRaw AHD 真正显影 · 实验 sRGB 预览，RAW 质量待验"),raw.originalSize,raw.preview};
+            // The window uses EditLoader for RAW. Keep this JPEG-only API from
+            // accidentally reopening an unisolated legacy RAW decoder.
+            return JpegResult{request.path,QStringLiteral("RAW请通过照片编辑通道读取"),{},{},{}};
         }
         return decodeJpeg(request.path, request.preview ? 3840 : 160);
     }));

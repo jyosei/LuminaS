@@ -29,6 +29,8 @@
 
 ## 大帧交接与源保护
 
+2026-10-17交付元数据扩展：Hello还要求`sourceMetadata=1`能力相等；旧worker明确拒绝，不静默补空值。payload固定metadata字段`deliveryMetadata`为null或schema1白名单对象，字符串/ISO/有限数/GPS范围严格校验。公共RAW读源要求该快照存在。拍摄参数在LibRaw recycle之前从本次已打开头取得，版权补充沿用有界CMT1解析；父端不再LibRaw二次开头。快照与同次已校验源path/hash一起提供给导出元数据筛选，GPS关闭时清除flag及全部坐标；这些交付字段不写入Recipe、项目sourceFacts或像素算法身份。源校验、浮点/矩阵及原有内存释放仍保持。公共RAW readSource/prepareSource及导出调用均从后台进入固定worker，旧JPEG loader拒绝RAW。具体实际证据见[S3-D2-EXPORT-BOUNDARY-RESULTS.md](S3-D2-EXPORT-BOUNDARY-RESULTS.md)。
+
 二进制放父端新建的专属会话目录，固定受控文件名和token。没有任意用户输出路径；拒绝已有目标、路径逃逸、链接目标以及不匹配token。先同目录临时写入再原子提交，不启用direct-write fallback。
 
 明确头部/metadata长度、packed RGBA32F行宽、宽高和精确像素字节数；乘法先用有界64位检查，拒绝截断/尾随数据、hash不一致、非法float、矛盾尺寸或矩阵/WB事实。维持straight linear Rec.2020 D65和现有负值/超白/透明边缘策略，不加未经验证的新裁剪、gamma或量化。源数据全程只读，原有解码前后SHA核验保留；导入前再检查源身份未变。

@@ -1,3 +1,4 @@
+#include "background_source.h"
 #include <QtTest>
 #include <QBuffer>
 #include <QColorSpace>
@@ -33,7 +34,7 @@ private slots:
         QImage original(size,QImage::Format_RGB888);original.setColorSpace(QColorSpace::SRgb);
         for(int y=0;y<size.height();++y)for(int x=0;x<size.width();++x)original.setPixelColor(x,y,QColor(40+x*150/size.width(),45+y*140/size.height(),65+(x+y)%90));
         const auto path=directory.filePath(QStringLiteral("synthetic.jpg"));QVERIFY(original.save(path,"JPEG",95));const auto jpegHash=fileHash(path);
-        const auto loaded=readSource(path);QVERIFY2(loaded.error.isEmpty(),qPrintable(loaded.error));QVERIFY(loaded.source);
+        const auto loaded=readTestSource(path);QVERIFY2(loaded.error.isEmpty(),qPrintable(loaded.error));QVERIFY(loaded.source);
         const auto sourceHash=digest(loaded.source->linear);
         Recipe recipe;recipe.exposure=.25;recipe.contrast=.12;recipe.saturation=1.15;recipe.crop={.1,.1,.8,.8};recipe.angle=3;recipe.curves[0]={{0,0},{.45,.52},{1,1}};
         const auto recipeBefore=recipeJson(recipe);const auto full=renderFrame(*loaded.source,recipe,0);const auto preview=renderFrame(*loaded.source,recipe,3840);

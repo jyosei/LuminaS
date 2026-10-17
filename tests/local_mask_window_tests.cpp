@@ -1,3 +1,4 @@
+#include "background_source.h"
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QTabWidget>
@@ -99,7 +100,7 @@ private slots:
             qInfo().noquote()<<"constrained-native"<<final.workFrame.raw<<final.image.size()<<frozen->global.crop<<"minimumAlpha"<<alphaMinimum(final.workFrame.linear)<<finalHash;
         }
         if(qEnvironmentVariableIsSet("LUMINA_CROP_FULL_REPLAY")){
-            const auto loaded=readSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);
+            const auto loaded=readTestSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);
             QVERIFY2(loaded.source,qPrintable(loaded.error));QCOMPARE(loaded.source->sha256,frozen->asset.sourceHash);
             QCOMPARE(loaded.source->linear.size(),frozen->asset.normalizedSize);QString error;QByteArray first;
             for(int i=0;i<2;++i){const auto full=renderDocumentFullLinear(*loaded.source,*frozen,error);
@@ -173,7 +174,7 @@ private slots:
             QVERIFY(!frozenColor->global.monochrome);QCOMPARE(frozenColor->layers,locals);
         } // Release the native/prepared caches before this numerical full-source replay.
         if(qEnvironmentVariableIsSet("LUMINA_C6_FULL_REPLAY")){
-            QString error;const auto loaded=readSource(frozenColor->asset.sourcePath,frozenColor->global.warmth,frozenColor->global.tint);
+            QString error;const auto loaded=readTestSource(frozenColor->asset.sourcePath,frozenColor->global.warmth,frozenColor->global.tint);
             QVERIFY2(loaded.source,qPrintable(loaded.error));QCOMPARE(loaded.source->linear.size(),frozenColor->asset.normalizedSize);
             QCOMPARE(loaded.source->sha256,frozenColor->asset.sourceHash);
             QByteArray first;QSize outputSize;
@@ -224,7 +225,7 @@ private slots:
         requests.clear();bw->setChecked(false);QVERIFY(!overlay->isChecked());QCOMPARE(requests.count(),0);QCOMPARE(*w.currentPhotoDocument(),frozenValue);
         paint.clear();w.undoEdit();QVERIFY(!w.currentPhotoDocument()->layers[0].mask.invert);QCOMPARE(w.currentPhotoDocument()->layers[0].mask.feather,3.7);QVERIFY(waitFor([&]{return painted(w,c,paint);}));
         if(qEnvironmentVariableIsSet("LUMINA_MASK_FULL_REPLAY")){
-            QString error;const auto source=readSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);QVERIFY2(source.source,qPrintable(source.error));
+            QString error;const auto source=readTestSource(frozen->asset.sourcePath,frozen->global.warmth,frozen->global.tint);QVERIFY2(source.source,qPrintable(source.error));
             auto full=renderDocumentFullLinear(*source.source,*frozen,error);QVERIFY2(!full.isNull(),qPrintable(error));QCOMPARE(full.size(),source.source->originalSize);const auto first=pixels(full);full={};
             full=renderDocumentFullLinear(*source.source,*frozen,error);QVERIFY2(!full.isNull(),qPrintable(error));QCOMPARE(pixels(full),first);
             QCOMPARE(*frozen,frozenValue);qInfo().noquote()<<"feather-full-source"<<full.size()<<first;

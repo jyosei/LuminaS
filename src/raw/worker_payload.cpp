@@ -1,6 +1,7 @@
 #include "worker_payload.h"
 #include "io/preview_size.h"
 #include "render/cpu_renderer.h"
+#include "io/source_metadata_codec.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -55,6 +56,7 @@ template<class T,size_t N> bool parseArray(const QJsonValue &value,std::array<T,
 bool same(double a,double b){return std::abs(a-b)<=1e-12*std::max(1.,std::max(std::abs(a),std::abs(b)));}
 bool shape(const Request &r,const SourceFrame &f,QSize pixels,QString &error){
     if(!validRequest(r,error))return false;
+    if(f.hasDeliveryMetadata&&!validSourceMetadata(f.deliveryMetadata,error))return false;
     if constexpr(QSysInfo::ByteOrder!=QSysInfo::LittleEndian||sizeof(float)!=4)return reject(error,QStringLiteral("RAW帧平台不是little-endian float32"));
     if(f.path!=r.sourcePath||f.sha256!=r.sourceHash||!acceptedImageSize(f.originalSize)||!acceptedImageSize(pixels))return reject(error,QStringLiteral("RAW帧源身份或尺寸不匹配"));
     const bool expectedRaw=QFileInfo(r.sourcePath).suffix().compare("cr3",Qt::CaseInsensitive)==0;
@@ -88,15 +90,20 @@ QJsonObject metadata(const Request &r,const SourceFrame &f,const QString &pixelH
     {"sourceSize",QJsonArray{f.originalSize.width(),f.originalSize.height()}},{"pixelSize",QJsonArray{f.linear.width(),f.linear.height()}},
     {"warmth",f.rawWarmth},{"tint",f.rawTint},{"scale",f.sourcePixelsPerPixel},{"scaleX",f.sourcePixelsPerPixelX},{"scaleY",f.sourcePixelsPerPixelY},
     {"cameraToWork",arrayJson(f.cameraToWork)},{"cameraWB",arrayJson(f.cameraWB)},{"draftBalance",arrayJson(f.draftBalance)},
-    {"note",f.colorNote},{"facts",f.facts},{"pixelSha256",pixelHash}};}
+    {"note",f.colorNote},{"facts",f.facts},{"pixelSha256",pixelHash},
+    {"deliveryMetadata",f.hasDeliveryMetadata?QJsonValue(sourceMetadataJson(f.deliveryMetadata,error)):QJsonValue(QJsonValue::Null)}};}
 bool parseMetadata(const QJsonObject &o,const Request &r,SourceFrame &f,QSize &pixels,QString &error){
-    if(!keys(o,{"format","requestHash","path","sourceHash","raw","sourceSize","pixelSize","warmth","tint","scale","scaleX","scaleY","cameraToWork","cameraWB","draftBalance","note","facts","pixelSha256"}))return reject(error,QStringLiteral("RAW帧元数据字段不完整"));
+    if(!keys(o,{"format","requestHash","path","sourceHash","raw","sourceSize","pixelSize","warmth","tint","scale","scaleX","scaleY","cameraToWork","cameraWB","draftBalance","note","facts","pixelSha256","deliveryMetadata"}))return reject(error,QStringLiteral("RAW帧元数据字段不完整"));
     for(const auto name:{"format","requestHash","path","sourceHash","note","pixelSha256"})if(!o[name].isString())return reject(error,QStringLiteral("RAW帧字符串类型无效"));
     if(o["format"]!=QJsonValue("rgba32f-linear-rec2020-straight")||o["requestHash"].toString()!=requestHash(r,error)||!validHash(o["pixelSha256"].toString())||!o["raw"].isBool()||!o["facts"].isObject())return reject(error,QStringLiteral("RAW帧格式、任务或事实无效"));
     for(const auto name:{"warmth","tint","scale","scaleX","scaleY"})if(!number(o[name]))return reject(error,QStringLiteral("RAW帧数值类型无效"));
     if(!sizeFromJson(o["sourceSize"],f.originalSize)||!sizeFromJson(o["pixelSize"],pixels)||!parseArray(o["cameraToWork"],f.cameraToWork)||!parseArray(o["cameraWB"],f.cameraWB)||!parseArray(o["draftBalance"],f.draftBalance))return reject(error,QStringLiteral("RAW帧尺寸或矩阵格式无效"));
     f.path=o["path"].toString();f.sha256=o["sourceHash"].toString();f.raw=o["raw"].toBool();f.rawWarmth=o["warmth"].toDouble();f.rawTint=o["tint"].toDouble();
     f.sourcePixelsPerPixel=o["scale"].toDouble();f.sourcePixelsPerPixelX=o["scaleX"].toDouble();f.sourcePixelsPerPixelY=o["scaleY"].toDouble();f.colorNote=o["note"].toString();f.facts=o["facts"].toObject();
+    if(!o["deliveryMetadata"].isNull()){
+        if(!o["deliveryMetadata"].isObject()||!sourceMetadataFromJson(o["deliveryMetadata"].toObject(),f.deliveryMetadata,error))return reject(error,error.isEmpty()?QStringLiteral("RAW交付元数据格式无效"):error);
+        f.hasDeliveryMetadata=true;
+    }
     return shape(r,f,pixels,error);
 }
 bool writeBytes(QIODevice &file,QByteArrayView bytes,QCryptographicHash &hash,const CancellationToken &cancel,QString &error){

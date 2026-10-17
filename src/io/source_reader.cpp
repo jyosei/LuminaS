@@ -1,5 +1,12 @@
 #include "source_reader.h"
 #include "raw/source_kernel.h"
+#include "raw/worker_client.h"
+#include "raw/source_metadata.h"
+#include "source_metadata_codec.h"
+#include "render/cpu_renderer.h"
+#include <QUuid>
+#include <QDateTime>
+#include <QCoreApplication>
 #include "preview_size.h"
 #include "color/color_pipeline.h"
 #include <libraw/libraw.h>
@@ -13,6 +20,8 @@
 #include <vector>
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <optional>
 #include <QThread>
 #include <QThreadPool>
 #include <QtConcurrentRun>
@@ -117,6 +126,23 @@ FrameResult readSourceKernel(const QString &path,double warmth,double tint,const
         QImage camera(width,height,QImage::Format_RGBX64);if(camera.isNull())return {{},"RAW allocation"};
         if((code=raw.copy_mem_image(camera.bits(),int(camera.bytesPerLine()),0))!=LIBRAW_SUCCESS)return failure(code);
         if(isCanceled(cancel))return {{},"Canceled"};
+        // Capture the already-open RAW header once. The parent never needs to
+        // reopen LibRaw for delivery metadata. Keep it outside identity facts.
+        auto &metadata=frame->deliveryMetadata;const auto &other=raw.imgdata.other;
+        const auto bounded=[](const char *text,size_t size){return QString::fromUtf8(text,int(strnlen(text,size))).left(2048);};
+        const auto positive=[](double value){return std::isfinite(value)&&value>=0?value:0.;};
+        metadata.make=bounded(raw.imgdata.idata.make,sizeof(raw.imgdata.idata.make));metadata.model=bounded(raw.imgdata.idata.model,sizeof(raw.imgdata.idata.model));
+        metadata.artist=bounded(other.artist,sizeof(other.artist));metadata.lens=bounded(raw.imgdata.lens.Lens,sizeof(raw.imgdata.lens.Lens));
+        metadata.exposure=positive(other.shutter);metadata.aperture=positive(other.aperture);metadata.focalLength=positive(other.focal_len);
+        metadata.iso=int(std::clamp(positive(other.iso_speed),0.,1000000.));if(other.timestamp>0)metadata.date=QDateTime::fromSecsSinceEpoch(other.timestamp).toString("yyyy:MM:dd HH:mm:ss");
+        const auto &gps=other.parsed_gps;
+        if(gps.gpsparsed){
+            const double latitude=(gps.latitude[0]+gps.latitude[1]/60.+gps.latitude[2]/3600.)*(gps.latref=='S'?-1:1);
+            const double longitude=(gps.longitude[0]+gps.longitude[1]/60.+gps.longitude[2]/3600.)*(gps.longref=='W'?-1:1);
+            if(std::isfinite(latitude)&&std::isfinite(longitude)&&std::abs(latitude)<=90&&std::abs(longitude)<=180){metadata.hasGps=true;metadata.latitude=latitude;metadata.longitude=longitude;metadata.altitude=std::isfinite(gps.altitude)?gps.altitude*(gps.altref?-1:1):0;}
+        }
+        RawWorker::enrichCopyright(path,metadata);
+        if(!validSourceMetadata(metadata,error))return {{},error};frame->hasDeliveryMetadata=true;
         raw.recycle();
         phaseDone("rawRgb16CopyMs");
         frame->linear=QImage(width,height,QImage::Format_RGBA32FPx4);if(frame->linear.isNull())return {{},"float allocation"};
@@ -151,6 +177,7 @@ FrameResult readSourceKernel(const QString &path,double warmth,double tint,const
         frame->colorNote=QStringLiteral("RAW相机通道 → 浮点矩阵 → 线性Rec.2020；高光/肤色待验证");
         frame->facts={{"highlight",1},{"outputColor",0},{"normalization",normalization},{"workMin",minimum},{"workMax",maximum},
             {"contract","Bayer AHD camera RGB16 with max-WB scaling; float matrix preserves negative/superwhite; sensor/black-floor clipping not recovered"}};
+
     }
     if(frame->linear.isNull())return {{},QStringLiteral("源图读取失败")};
     if(isCanceled(cancel))return {{},"Canceled"};
@@ -161,6 +188,29 @@ FrameResult readSourceKernel(const QString &path,double warmth,double tint,const
     frame->facts.insert("width",frame->linear.width());frame->facts.insert("height",frame->linear.height());
     frame->originalSize=frame->linear.size();return {frame,{}};
 }
-FrameResult readSource(const QString &path,double warmth,double tint,const CancellationToken &cancel){
-    return readSourceKernel(path,warmth,tint,cancel);
+static FrameResult workerSource(const QString &path,double warmth,double tint,const CancellationToken &cancel,const QString &expectedHash,const std::optional<Recipe> &geometry={},const SourceReadProgress &progress={}){
+    if(isCanceled(cancel))return {{},QStringLiteral("Canceled")};
+    if(QCoreApplication::instance()&&QThread::currentThread()==QCoreApplication::instance()->thread())return {{},QStringLiteral("RAW源读取只能在后台任务中运行")};
+    RawWorker::Request request;request.id=QUuid::createUuid().toString(QUuid::WithoutBraces);request.token=QUuid::createUuid().toString(QUuid::WithoutBraces);
+    request.sourcePath=QFileInfo(path).absoluteFilePath();request.sourceHash=expectedHash.isEmpty()?QString(64,'0'):expectedHash.toLower();request.warmth=warmth;request.tint=tint;
+    if(geometry){request.operation=RawWorker::Operation::Prepare;request.geometry=*geometry;request.longEdge=3840;}
+    QString error;if(!RawWorker::validRequest(request,error))return {{},error};
+    if(expectedHash.isEmpty())request.sourceHash=QString::fromLatin1(hashFile(path,cancel));if(isCanceled(cancel))return {{},QStringLiteral("Canceled")};
+    const auto result=RawWorker::runWorker(request,cancel,progress);
+    if(isCanceled(cancel))return {{},QStringLiteral("Canceled")};
+    if(result.source&&!result.source->hasDeliveryMetadata)return {{},QStringLiteral("RAW进程缺少交付元数据，请使用同版本程序")};return result;
+}
+FrameResult readSource(const QString &path,double warmth,double tint,const CancellationToken &cancel,const QString &expectedHash,const SourceReadProgress &progress){
+    if(QFileInfo(path).suffix().compare("cr3",Qt::CaseInsensitive)==0)return workerSource(path,warmth,tint,cancel,expectedHash,{},progress);
+    const auto result=readSourceKernel(path,warmth,tint,cancel,progress);
+    if(result.source&&!expectedHash.isEmpty()&&result.source->sha256.compare(expectedHash,Qt::CaseInsensitive)!=0)return {{},QStringLiteral("源文件与冻结指纹不匹配")};return result;
+}
+FrameResult prepareSource(const QString &path,const Recipe &geometry,double warmth,double tint,const CancellationToken &cancel,const QString &expectedHash,const SourceReadProgress &progress){
+    // Reuse the worker request validator to forbid accidentally baking grading.
+    RawWorker::Request check;check.id=QUuid::createUuid().toString(QUuid::WithoutBraces);check.token=QUuid::createUuid().toString(QUuid::WithoutBraces);check.sourcePath=QFileInfo(path).absoluteFilePath();check.sourceHash=QString(64,'0');check.operation=RawWorker::Operation::Prepare;check.geometry=geometry;check.longEdge=3840;QString error;
+    if(!RawWorker::validRequest(check,error))return {{},error};
+    if(QFileInfo(path).suffix().compare("cr3",Qt::CaseInsensitive)==0)return workerSource(path,warmth,tint,cancel,expectedHash,geometry,progress);
+    const auto read=readSource(path,0,0,cancel,expectedHash,progress);if(!read.source)return read;auto frame=std::make_shared<SourceFrame>(*read.source);
+    frame->linear=renderLinear(*read.source,geometry,3840,error,{},cancel);if(frame->linear.isNull())return {{},error};
+    frame->sourcePixelsPerPixelX=double(frame->originalSize.width())*geometry.crop.width()/frame->linear.width();frame->sourcePixelsPerPixelY=double(frame->originalSize.height())*geometry.crop.height()/frame->linear.height();frame->sourcePixelsPerPixel=std::max(frame->sourcePixelsPerPixelX,frame->sourcePixelsPerPixelY);return {frame,{}};
 }

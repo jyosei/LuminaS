@@ -8,6 +8,7 @@
 #include <QVector>
 #include <QMetaType>
 #include "defringe_settings.h"
+#include "source_metadata.h"
 constexpr int maximumCurvePoints=64;
 using Curve=QVector<QPointF>;
 struct HslAdjustment { double hue=0,saturation=0,luminance=0; bool operator==(const HslAdjustment &) const = default; };
@@ -67,6 +68,8 @@ struct SourceFrame {
     std::array<float,9> draftBalance{1,0,0,0,1,0,0,0,1};
     std::array<float,9> cameraToWork{};
     std::array<double,4> cameraWB{};
+    SourceMetadata deliveryMetadata;
+    bool hasDeliveryMetadata=false; // Not sourceFacts/project identity or Recipe.
 };
 struct FrameResult { std::shared_ptr<const SourceFrame> source; QString error; };
 QJsonObject recipeJson(const Recipe &recipe);

@@ -71,7 +71,7 @@ bool requestFromJson(const QJsonObject &o,Request &out,QString &error){
 }
 QString requestHash(const Request &r,QString &error){const auto json=requestJson(r,error);return error.isEmpty()?QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(json).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex()):QString{};}
 QJsonObject hello(){return {{"type","hello"},{"protocol",protocolVersion},{"algorithm",algorithmVersion},{"libraw",QString::fromLatin1(LibRaw::version())},
-    {"lcms",int(cmsGetEncodedCMMversion())},{"qt",QString::fromLatin1(qVersion())},{"pixelFormat","rgba32f-linear-rec2020-straight"},{"endian","little"}};}
+    {"lcms",int(cmsGetEncodedCMMversion())},{"qt",QString::fromLatin1(qVersion())},{"pixelFormat","rgba32f-linear-rec2020-straight"},{"endian","little"},{"sourceMetadata",1}};}
 bool validHello(const QJsonObject &json,QString &error){error.clear();if(json!=hello())return reject(error,QStringLiteral("RAW进程握手/算法/依赖版本不匹配"));return true;}
 QByteArray encodeLine(const QJsonObject &o,QString &error){error.clear();auto data=QJsonDocument(o).toJson(QJsonDocument::Compact);if(data.size()>maximumLineBytes){error=QStringLiteral("RAW控制消息超限");return {};}data.append('\n');return data;}
 bool decodeLine(QByteArrayView line,QJsonObject &out,QString &error){
