@@ -922,12 +922,16 @@ void sharpenMaskRecipeAndHistory()
         QTRY_VERIFY_WITH_TIMEOUT(readyCount>before+concurrentFrames,30000);readyCount=0;w.applyRecipe({});QTRY_VERIFY_WITH_TIMEOUT(readyCount>0,30000);
         QTRY_COMPARE_WITH_TIMEOUT(prepared.size(),12,240000);const auto warmMs=clock.elapsed();QCOMPARE(w.currentIndex(),0);
         for(const auto &path:paths)QVERIFY(loader->preview(path,{}).has_value());QJsonArray clicks;
-        for(int i=0;i<paths.size();++i){readyCount=0;qint64 firstNativePaintMs=-1;QObject paintObserver;
-            connect(w.findChild<Canvas *>(),&Canvas::framePainted,&paintObserver,[&]{if(firstNativePaintMs<0)firstNativePaintMs=clock.elapsed();});
+        for(int click=0;click<paths.size();++click){const int i=(click+1)%paths.size();readyCount=0;qint64 firstNativePaintMs=-1,paintedKey=0;QObject paintObserver;
+            // Every activation switches photos. Count only the canonical key of
+            // this photo, rather than an old queued repaint or a loading frame.
+            const auto cached=loader->preview(paths[i],{});QVERIFY(cached);QSet<qint64> photoKeys{cached->image.cacheKey()};
+            connect(loader,&EditLoader::ready,&paintObserver,[&](const EditResult &r){if(r.path==paths[i]&&r.recipe==Recipe{}&&r.error.isEmpty())photoKeys.insert(r.image.cacheKey());});
+            connect(w.findChild<Canvas *>(),&Canvas::canonicalFramePainted,&paintObserver,[&](qint64 key){if(firstNativePaintMs<0&&photoKeys.contains(key)){paintedKey=key;firstNativePaintMs=clock.elapsed();}});
             clock.restart();w.activate(i);QCOMPARE(w.displayedPath(),paths[i]);const auto immediateMs=clock.elapsed();QApplication::processEvents();const auto paintedMs=clock.elapsed();
             QTRY_VERIFY_WITH_TIMEOUT(firstNativePaintMs>=0,5000);
             QTRY_VERIFY_WITH_TIMEOUT(readyCount>0,30000);const auto result=lastResult;QVERIFY2(result.error.isEmpty(),qPrintable(result.error));QVERIFY(!result.sourceRebuilt);QCOMPARE(qMax(result.image.width(),result.image.height()),3840);
-            clicks.append(QJsonObject{{"file",QFileInfo(paths[i]).fileName()},{"immediateMs",double(immediateMs)},{"paintDispatchMs",double(paintedMs)},{"firstNativePaintMs",double(firstNativePaintMs)},{"verifiedWorkerMs",result.elapsedMs},{"sourceRebuilt",result.sourceRebuilt}});
+            clicks.append(QJsonObject{{"file",QFileInfo(paths[i]).fileName()},{"immediateMs",double(immediateMs)},{"paintDispatchMs",double(paintedMs)},{"firstNativePaintMs",double(firstNativePaintMs)},{"paintedCanonicalKey",QString::number(paintedKey)},{"canonicalPaintVerified",photoKeys.contains(paintedKey)},{"verifiedWorkerMs",result.elapsedMs},{"sourceRebuilt",result.sourceRebuilt}});
         }
         const auto report=qEnvironmentVariable("LUMINA_PREFETCH_REPORT");if(!report.isEmpty()){QFile file(report);QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(QJsonObject{{"importCount",12},{"preparseMs",double(warmMs)},{"dragFramesWhilePrefetch",concurrentFrames},{"concurrentWorkerMs",concurrentTimes},{"clicks",clicks}}).toJson());}
         const auto shot=qEnvironmentVariable("LUMINA_S2_SCREENSHOT");if(!shot.isEmpty())QVERIFY(w.grab().save(shot));

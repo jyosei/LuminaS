@@ -1,5 +1,7 @@
 # 工程进度
 
+2026-10-17 D2生产EditLoader：RAW预加载/普通精确读取用Prepare 4K，需要完整几何时DecodeFull；保持原有翻转/全局/局部分层。所有目标构建exit0，完整73/73（404.66秒）通过。真实R7带WB/旋转裁剪/翻转/非空局部笔刷两分支像素一致，Full浮点源SHA一致；原生项目往返保持D1的4K SHA。修正首绘测试不核验照片的问题，改canonical key过滤并每次切图；原生12图严格首绘54–690ms（中位179.5ms），全部sourceRebuilt=false，但首次预解析78.045秒仍慢；旧42–62ms不能当作新图严格首绘。见S3-D2-EDIT-LOADER-RESULTS.md。公共readSource、导出转换预览/全源及RAW元数据仍有父端直接解析，D2及S3未完成；继续隔离接线、D3开销/资源、D4百轮和D5出口。不推送不打包。
+
 2026-10-17 D2可靠性：内部故障接缝、父/worker创建时间归属记录及保守孤儿缓存回收已实现。核心/worker/专项目标构建exit0，相关五项5/5（10.33秒）；fault18/session8/client8 passed（默认2实照skip）。真实R7接收到open/unpack/develop/write回执后取消3 passed、exit0，原片SHA不变，6.036秒整套。真实驱动进程被强杀后worker与后代HANDLE均signaled，遗留合成float会话按记录回收。详见S3-D2-RELIABILITY-RESULTS.md。DSH因超范围读取工程文本被停止，无图像/凭据读取证据；GPT修正草稿并自行验收。生产尚未切换，导出元数据仍有父端LibRaw.open_file；完整最新仍基础版70/70，不冒充新72项通过。继续生产接线、原生/资源及D3–D5；S3未完成，无包/推送。
 
 2026-10-17 D2基础：新增严格控制协议、RGBA32F私有帧、LuminaS-raw-worker及后台单槽父端/派发前Job保护/退出后导入，保留原解码核。所有目标构建exit0，完整70/70（420.72秒）；新测试含协议/帧篡改、正常退出、取消、错源及收到子进程阶段后取消再继续。真实R7 JPEG/CR3全源与几何/WB 4K的CLI和父端对照像素SHA相同，源不变；整套父端对照36.163/42.316秒，不是读取提速基准。生产仍直接原核，故障注入、实际强杀/树审计、Prepare/fullGeometry生产接线与孤儿回收未完成，D2及S3仍未完成。见S3-D2-FOUNDATION-RESULTS.md；继续D2→D3–D5，完成S3后才上传/迁移打包。先前约40MB残留自动审批删除拒绝仍保留，无新截图/包/推送。

@@ -4,6 +4,8 @@
 #include "render/geometry_transform.h"
 #include "core/point_color_sampling.h"
 #include "io/source_reader.h"
+#include "raw/worker_client.h"
+#include <QUuid>
 #include "render/cpu_renderer.h"
 #include "render/local_renderer.h"
 #include "render/local_preview_cache.h"
@@ -16,6 +18,13 @@
 #include <cmath>
 #include <QThread>
 static QMutex fullSourceMutex;
+static FrameResult rawWorkerRead(const QString &path,const QString &hash,double warmth,double tint,
+    const CancellationToken &cancel,const std::optional<Recipe> &geometry={}){
+    RawWorker::Request request;request.id=QUuid::createUuid().toString(QUuid::WithoutBraces);request.token=QUuid::createUuid().toString(QUuid::WithoutBraces);
+    request.sourcePath=path;request.sourceHash=hash;request.warmth=warmth;request.tint=tint;
+    if(geometry){request.operation=RawWorker::Operation::Prepare;request.geometry=*geometry;request.longEdge=3840;}
+    return RawWorker::runWorker(request,cancel);
+}
 // A new request must not invalidate a still-valid same-generation interactive round trip:
 // those keep feeding the current slider drag. Everything else is superseded.
 bool EditLoader::compatible(const Request &active,const Request &next){
@@ -206,12 +215,12 @@ EditResult EditLoader::process(const Request &request){
                 if(closing||isCanceled(request.cancel)){result.error="Canceled";return result;}
                 auto appeared=workCache.get(request.path,digest);
                 if(appeared)base=std::move(*appeared);else{
-                    const auto read=readSource(request.path,0,0,request.cancel);if(!read.error.isEmpty()){result.error=read.error;return result;}result.sourceRebuilt=true;
-                    base=*read.source;base.linear=renderLinear(*read.source,{},3840,result.error,{},request.cancel);
+                    const auto read=raw?rawWorkerRead(request.path,digest,0,0,request.cancel,Recipe{}):readSource(request.path,0,0,request.cancel);if(!read.error.isEmpty()){result.error=read.error;return result;}result.sourceRebuilt=true;
+                    base=*read.source;if(!raw)base.linear=renderLinear(*read.source,{},3840,result.error,{},request.cancel);
                     if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
                     if(!result.error.isEmpty())return result;
-                    base.sourcePixelsPerPixelX=double(read.source->linear.width())/base.linear.width();base.sourcePixelsPerPixelY=double(read.source->linear.height())/base.linear.height();
-                    base.sourcePixelsPerPixel=std::max(double(read.source->linear.width())/base.linear.width(),double(read.source->linear.height())/base.linear.height());
+                    if(!raw){base.sourcePixelsPerPixelX=double(read.source->linear.width())/base.linear.width();base.sourcePixelsPerPixelY=double(read.source->linear.height())/base.linear.height();
+                        base.sourcePixelsPerPixel=std::max(base.sourcePixelsPerPixelX,base.sourcePixelsPerPixelY);}
                     if(!workCache.put(base))result.colorNote=QStringLiteral("临时缓存写入失败，内存预览仍可用");
                 }
             }
@@ -229,15 +238,25 @@ EditResult EditLoader::process(const Request &request){
                 auto appeared=workCache.get(request.path,digest);if(appeared){proxy=std::move(*appeared);proxyCrop={0,0,1,1};proxyAngle=0;proxyPerspective={0,0};proxyDistortion=0;proxyChromaticAberration={0,0};proxyLensShading=0;}
             }
             if(proxy.linear.isNull()||(!request.tag.interactive&&(proxy.rawWarmth!=warmth||proxy.rawTint!=tint))||proxyCrop!=request.recipe.crop||proxyAngle!=request.recipe.angle||proxyPerspective!=request.recipe.perspective||proxyDistortion!=request.recipe.distortion||proxyChromaticAberration!=request.recipe.chromaticAberration||proxyLensShading!=request.recipe.lensShading){
-            if(!cached||cached->path!=request.path||cached->sha256!=digest||cached->rawWarmth!=warmth||cached->rawTint!=tint){
-                proxy={};cached.reset();const auto read=readSource(request.path,warmth,tint,request.cancel);if(!read.error.isEmpty()){result.error=read.error;return result;}cached=read.source;result.sourceRebuilt=true;
-            }
             Recipe geometry=preparedGeometry(request.recipe);
-            proxy=*cached;proxy.linear=renderLinear(*cached,geometry,3840,result.error,{},request.cancel);
+            if(raw&&!hasPreparedAdjustment(request.recipe)&&!request.tag.interactive){
+                // Ordinary selected/preloaded RAW needs only the exact 4K frame.
+                // Full geometry support is decoded separately when requested.
+                proxy={};cached.reset();const auto read=rawWorkerRead(request.path,digest,warmth,tint,request.cancel,geometry);
+                if(!read.error.isEmpty()){result.error=read.error;return result;}proxy=*read.source;result.sourceRebuilt=true;
+            }else{
+                if(!cached||cached->path!=request.path||cached->sha256!=digest||cached->rawWarmth!=warmth||cached->rawTint!=tint){
+                    proxy={};cached.reset();const auto read=raw?rawWorkerRead(request.path,digest,warmth,tint,request.cancel):readSource(request.path,warmth,tint,request.cancel);
+                    if(!read.error.isEmpty()){result.error=read.error;return result;}cached=read.source;result.sourceRebuilt=true;
+                }
+                proxy=*cached;proxy.linear=renderLinear(*cached,geometry,3840,result.error,{},request.cancel);
+                if(!proxy.linear.isNull()){
+                    proxy.sourcePixelsPerPixelX=cached->pixelScaleX()*cached->linear.width()*geometry.crop.width()/proxy.linear.width();proxy.sourcePixelsPerPixelY=cached->pixelScaleY()*cached->linear.height()*geometry.crop.height()/proxy.linear.height();
+                    proxy.sourcePixelsPerPixel=std::max(cached->linear.width()*geometry.crop.width()/proxy.linear.width(),cached->linear.height()*geometry.crop.height()/proxy.linear.height());
+                }
+            }
             if(isCanceled(request.cancel)){result.image={};result.error="Canceled";return result;}
             if(!result.error.isEmpty())return result;
-            proxy.sourcePixelsPerPixelX=cached->pixelScaleX()*cached->linear.width()*geometry.crop.width()/proxy.linear.width();proxy.sourcePixelsPerPixelY=cached->pixelScaleY()*cached->linear.height()*geometry.crop.height()/proxy.linear.height();
-            proxy.sourcePixelsPerPixel=std::max(cached->linear.width()*geometry.crop.width()/proxy.linear.width(),cached->linear.height()*geometry.crop.height()/proxy.linear.height());
             proxyCrop=geometry.crop;proxyAngle=geometry.angle;proxyPerspective=geometry.perspective;proxyDistortion=geometry.distortion;proxyChromaticAberration=geometry.chromaticAberration;proxyLensShading=geometry.lensShading;
             if(warmth==0&&tint==0&&proxyCrop==QRectF(0,0,1,1)&&proxyAngle==0&&proxyPerspective.isNull()&&proxyDistortion==0&&proxyChromaticAberration.isNull()&&proxyLensShading==0)workCache.put(proxy);
             if(hasPreparedAdjustment(request.recipe)||request.tag.interactive)result.fullGeometry=cached;else cached.reset();
