@@ -2,6 +2,7 @@
 #include "io/preview_size.h"
 #include "render/cpu_renderer.h"
 #include "io/source_metadata_codec.h"
+#include "io/sha256_stream.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -106,11 +107,11 @@ bool parseMetadata(const QJsonObject &o,const Request &r,SourceFrame &f,QSize &p
     }
     return shape(r,f,pixels,error);
 }
-bool writeBytes(QIODevice &file,QByteArrayView bytes,QCryptographicHash &hash,const CancellationToken &cancel,QString &error){
+bool writeBytes(QIODevice &file,QByteArrayView bytes,Sha256Stream &hash,const CancellationToken &cancel,QString &error){
     qsizetype position=0;while(position<bytes.size()){
         if(isCanceled(cancel))return reject(error,QStringLiteral("Canceled"));
         const auto count=std::min<qsizetype>(1024*1024,bytes.size()-position);const auto written=file.write(bytes.data()+position,count);
-        if(written<=0)return reject(error,file.errorString());hash.addData(QByteArrayView(bytes.data()+position,written));position+=written;
+        if(written<=0)return reject(error,file.errorString());if(!hash.addData(QByteArrayView(bytes.data()+position,written)))return reject(error,QStringLiteral("RAW哈希数据写入失败"));position+=written;
     }return true;
 }
 bool commitNoReplace(const QString &from,const QString &to,QString &error){
@@ -134,18 +135,18 @@ bool writePayload(const QString &directory,const Request &r,const SourceFrame &f
     if(f.linear.format()!=QImage::Format_RGBA32FPx4)return reject(error,QStringLiteral("RAW帧不是RGBA32F"));
     QString root;if(!directoryPath(directory,root,error))return false;const auto target=QDir(root).filePath(r.token+".frame");
     if(QFileInfo::exists(target)||QFileInfo(target).isSymLink())return reject(error,QStringLiteral("RAW帧目标已存在，未覆盖"));
-    const auto rowBytes=qint64(f.linear.width())*16,pixelBytes=rowBytes*f.linear.height();QCryptographicHash pixelHash(QCryptographicHash::Sha256);
+    const auto rowBytes=qint64(f.linear.width())*16,pixelBytes=rowBytes*f.linear.height();Sha256Stream pixelHash;
     for(int y=0;y<f.linear.height();++y){
         if(isCanceled(cancel))return reject(error,QStringLiteral("Canceled"));
         if(!pixelRow(reinterpret_cast<const float *>(f.linear.constScanLine(y)),f.linear.width()))return reject(error,QStringLiteral("RAW帧含非法float/alpha"));
-        pixelHash.addData(QByteArrayView(reinterpret_cast<const char *>(f.linear.constScanLine(y)),rowBytes));
+        if(!pixelHash.addData(QByteArrayView(reinterpret_cast<const char *>(f.linear.constScanLine(y)),rowBytes)))return reject(error,QStringLiteral("RAW像素哈希失败"));
     }
-    const auto digest=QString::fromLatin1(pixelHash.result().toHex());const auto meta=metadata(r,f,digest,error);if(!error.isEmpty())return false;
+    const auto pixelDigest=pixelHash.result();if(pixelDigest.size()!=32)return reject(error,QStringLiteral("RAW像素摘要不完整"));const auto digest=QString::fromLatin1(pixelDigest.toHex());const auto meta=metadata(r,f,digest,error);if(!error.isEmpty())return false;
     const auto json=QJsonDocument(meta).toJson(QJsonDocument::Compact);if(json.size()>maximumLineBytes)return reject(error,QStringLiteral("RAW帧元数据超限"));
     QByteArray header(32,'\0');std::copy(magic.begin(),magic.end(),header.begin());
     qToLittleEndian<quint32>(protocolVersion,header.data()+8);qToLittleEndian<quint32>(quint32(json.size()),header.data()+12);qToLittleEndian<quint64>(quint64(pixelBytes),header.data()+16);
     qToLittleEndian<quint32>(quint32(f.linear.width()),header.data()+24);qToLittleEndian<quint32>(quint32(f.linear.height()),header.data()+28);
-    QCryptographicHash fileHash(QCryptographicHash::Sha256);
+    Sha256Stream fileHash;
     StagingOwner stagedFile;
     {
         QTemporaryFile staged(QDir(root).filePath(".raw-stage-XXXXXX"));if(!staged.open())return reject(error,staged.errorString());
@@ -158,9 +159,10 @@ bool writePayload(const QString &directory,const Request &r,const SourceFrame &f
         // ownership of only this freshly created staging file.
     }
     if(isCanceled(cancel))return reject(error,QStringLiteral("Canceled"));
+    const auto fileDigest=fileHash.result();if(fileDigest.size()!=32)return reject(error,QStringLiteral("RAW文件摘要不完整"));
     if(!commitNoReplace(stagedFile.path,target,error))return false;
     out={{"type","done"},{"protocol",protocolVersion},{"id",r.id},{"token",r.token},{"fileBytes",QString::number(32+json.size()+pixelBytes)},
-         {"pixelSha256",digest},{"fileSha256",QString::fromLatin1(fileHash.result().toHex())},{"frame",meta}};return true;
+         {"pixelSha256",digest},{"fileSha256",QString::fromLatin1(fileDigest.toHex())},{"frame",meta}};return true;
 }
 FrameResult readPayload(const QString &directory,const Request &r,const QJsonObject &done,const CancellationToken &cancel){
     QString error;const auto fail=[&](const QString &e){return FrameResult{{},e};};
@@ -181,15 +183,16 @@ FrameResult readPayload(const QString &directory,const Request &r,const QJsonObj
     auto frame=std::make_shared<SourceFrame>();QSize size;if(!parseMetadata(meta,r,*frame,size,error))return fail(error);
     if(size!=QSize(int(width),int(height)))return fail(QStringLiteral("RAW帧头与元数据尺寸矛盾"));
     if(isCanceled(cancel))return fail("Canceled");frame->linear=QImage(size,QImage::Format_RGBA32FPx4);if(frame->linear.isNull())return fail(QStringLiteral("RAW帧分配失败"));
-    QCryptographicHash wholeHash(QCryptographicHash::Sha256),pixelHash(QCryptographicHash::Sha256);wholeHash.addData(header);wholeHash.addData(json);
+    Sha256Stream wholeHash,pixelHash;if(!wholeHash.addData(header)||!wholeHash.addData(json))return fail(QStringLiteral("RAW帧头/元数据哈希失败"));
     const auto rowBytes=qint64(width)*16;
     for(int y=0;y<size.height();++y){
         qint64 position=0;auto *row=reinterpret_cast<char *>(frame->linear.scanLine(y));
         while(position<rowBytes){if(isCanceled(cancel))return fail("Canceled");const auto count=file.read(row+position,std::min<qint64>(1024*1024,rowBytes-position));if(count<=0)return fail(QStringLiteral("RAW像素读取失败/截断"));position+=count;}
         if(!pixelRow(reinterpret_cast<const float *>(row),size.width()))return fail(QStringLiteral("RAW像素含非法float/alpha"));
-        const auto bytes=QByteArrayView(row,rowBytes);wholeHash.addData(bytes);pixelHash.addData(bytes);
+        const auto bytes=QByteArrayView(row,rowBytes);if(!wholeHash.addData(bytes)||!pixelHash.addData(bytes))return fail(QStringLiteral("RAW像素哈希失败"));
     }
-    if(file.size()!=fileBytes||!file.atEnd()||QString::fromLatin1(wholeHash.result().toHex())!=done["fileSha256"].toString()||QString::fromLatin1(pixelHash.result().toHex())!=done["pixelSha256"].toString())return fail(QStringLiteral("RAW帧读取后长度或SHA不一致"));
+    const auto wholeDigest=wholeHash.result(),pixelDigest=pixelHash.result();if(wholeDigest.size()!=32||pixelDigest.size()!=32)return fail(QStringLiteral("RAW帧摘要不完整"));
+    if(file.size()!=fileBytes||!file.atEnd()||QString::fromLatin1(wholeDigest.toHex())!=done["fileSha256"].toString()||QString::fromLatin1(pixelDigest.toHex())!=done["pixelSha256"].toString())return fail(QStringLiteral("RAW帧读取后长度或SHA不一致"));
     if(isCanceled(cancel))return fail("Canceled");return {std::move(frame),{}};
 }
 }

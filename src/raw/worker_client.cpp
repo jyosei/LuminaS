@@ -2,6 +2,7 @@
 #include "worker_payload.h"
 #include "worker_client_testing.h"
 #include "worker_session.h"
+#include "io/sha256_stream.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -28,13 +29,14 @@ namespace {
 std::timed_mutex slot;
 QString sourceHash(const QString &path,const CancellationToken &cancel){
     QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256);
+    Sha256Stream hash;
     while(!file.atEnd()){
         if(isCanceled(cancel))return {};
         const auto bytes=file.read(1024*1024);if(bytes.isEmpty()&&file.error()!=QFile::NoError)return {};
-        hash.addData(bytes);
+        if(!hash.addData(bytes))return {};
     }
-    return QString::fromLatin1(hash.result().toHex());
+    const auto digest=hash.result();if(digest.size()!=32)return {};
+    return QString::fromLatin1(digest.toHex());
 }
 bool keys(const QJsonObject &object,std::initializer_list<const char *> names){
     if(object.size()!=qsizetype(names.size()))return false;

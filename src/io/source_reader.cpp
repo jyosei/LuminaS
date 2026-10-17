@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QImageReader>
 #include <QCryptographicHash>
+#include "sha256_stream.h"
 #include <QElapsedTimer>
 #include <QMap>
 #include <cmath>
@@ -27,13 +28,14 @@
 #include <QtConcurrentRun>
 static QByteArray hashFile(const QString &path,const CancellationToken &cancel) {
     QFile file(path); if(!file.open(QIODevice::ReadOnly))return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256);
+    Sha256Stream hash;
     while(!file.atEnd()){
         if(isCanceled(cancel))return {};
         const auto block=file.read(1024*1024);if(block.isEmpty()&&file.error()!=QFile::NoError)return {};
-        hash.addData(block);
+        if(!hash.addData(block))return {};
     }
-    return hash.result().toHex();
+    const auto digest=hash.result();if(digest.size()!=32)return {};
+    return digest.toHex();
 }
 static QByteArray jpegIcc(const QString &path,QString &error) {
     QFile file(path); if(!file.open(QIODevice::ReadOnly)||file.read(2)!=QByteArray::fromHex("ffd8")){error="JPEG header";return {};}
