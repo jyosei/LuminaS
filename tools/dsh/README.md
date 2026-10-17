@@ -2,7 +2,7 @@
 
 Codex owns task selection, core image algorithms/model development, acceptance criteria and final review. DeepSeek Harness executes bounded simple/bulk tasks using its filesystem and PowerShell tools. This bridge uses the CLI bundled with the installed DeepSeek Harness Desktop, not a third-party harness wrapper or another npm installation.
 
-Verified installation: `C:/Users/CascadeAI/AppData/Local/Programs/DeepSeek Harness`, DSH `0.2.0-rc.2`. Set `LUMINAS_DSH_INSTALL` to override the installation directory. The launcher uses a fixed bundled Node path; update it if the Codex runtime moves.
+Verified installation: `C:/Users/CascadeAI/AppData/Local/Programs/DeepSeek Harness`, DSH `0.2.0-rc.2`. Set `LUMINAS_DSH_INSTALL` to override the installation directory. The launcher prefers a Node application on PATH, then the historical bundled fallback; update the fallback if neither is available after a Codex runtime move.
 
 The bridge speaks stdio MCP to Codex and ACP v1 to DSH. It uses a separate project-owned `DSH_HOME` at `.tools/dsh-home`, leaving the Desktop profile and chats alone. These automation sessions do not appear in the current Desktop profile. Sessions and results persist locally; `.tools` is ignored by Git.
 
