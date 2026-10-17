@@ -49,7 +49,7 @@ private slots:
         const auto raw=unicodeDirectory.path()+QStringLiteral("/中文样片.CR3");
         QVERIFY(QFile::copy(originalRaw,raw));
         const auto jpg=QDir(directory).absoluteFilePath("4X1A9817.JPG");
-        Window window; window.show(); QSignalSpy spy(&window,&Window::previewChanged);
+        Window window(nullptr,QStringLiteral("")); window.show(); QSignalSpy spy(&window,&Window::previewChanged);
         window.addFiles({raw,jpg});
         QTRY_COMPARE_WITH_TIMEOUT(window.displayedPath(),raw,120000);
         const auto labels=window.findChildren<QLabel *>(); bool sizeShown=false;
@@ -72,7 +72,7 @@ private slots:
             if(suffix=="cr3" || suffix=="jpg" || suffix=="jpeg") paths.append(file.absoluteFilePath());
         }
         QVERIFY(paths.size()>=2);
-        Window window; window.show(); window.addFiles(paths);
+        Window window(nullptr,QStringLiteral("")); window.show(); window.addFiles(paths);
         const QRegularExpression dimensions(QStringLiteral("预览 (\\d+) × (\\d+)"));
         for(int i=0;i<paths.size();++i) {
             window.activate(i);

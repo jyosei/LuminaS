@@ -42,6 +42,7 @@ public:
     bool canSamplePointColor(const QString &path,const Recipe &recipe,EditTag tag) const;
     void cancelPointColorSample(){++pointSampleGeneration;}
     void invalidate();
+    void resetImports();
 signals:
     // Diagnostic enqueue point, on the GUI thread and before worker dispatch.
     // Paired with actual frame provenance; ready is not proof of a screen paint.

@@ -123,7 +123,7 @@ void ProjectPersistence::finish(){
     if(job.epoch!=epoch){emit changed();dispatch();return;}
     auto result=value;
     if(loading(job.operation)&&(job.editSerial!=editSerial||isCanceled(job.cancel))){
-        result.state.reset();result.sources.clear();result.hash.clear();result.discarded=true;result.error=QStringLiteral("打开任务已取消或被新编辑取代");
+        result.state.reset();result.sources.clear();result.hash.clear();result.loadedHistory.reset();result.discarded=true;result.error=QStringLiteral("打开任务已取消或被新编辑取代");
     }
     failure=result.error;
     if(result.error.isEmpty()&&job.operation==PersistenceOperation::RecoverySave){journalHash=result.hash;journalRevision=job.state->project->revision;}

@@ -131,6 +131,9 @@ static bool validateRecoveryState(const RecoveryState &state, QString &error) {
     }
 
     for (const PendingImport &pending : state.pending) {
+        if (pending.mark!=PhotoMark::Unmarked&&pending.mark!=PhotoMark::Keep&&pending.mark!=PhotoMark::Reject) {
+            error=QStringLiteral("Pending import mark is invalid.");return false;
+        }
         if (!validatePath(pending.path, maxPathChars)) {
             error = QStringLiteral("Pending import contains an invalid path.");
             return false;
@@ -382,6 +385,7 @@ QJsonObject recoveryJson(const RecoveryState &state, QString &error) {
         QJsonObject pendingObj;
         pendingObj.insert(QStringLiteral("path"), pending.path);
         pendingObj.insert(QStringLiteral("error"), pending.error);
+        pendingObj.insert(QStringLiteral("mark"), int(pending.mark));
         pendingArray.append(pendingObj);
     }
     top.insert(QStringLiteral("pending"), pendingArray);
@@ -592,10 +596,11 @@ bool recoveryFromJson(const QJsonObject &json, RecoveryState &state, QString &er
                 return false;
             }
             const QJsonObject pendingObj = pendingValueEntry.toObject();
-            const QVector<QString> pendingKeys = {
+            QVector<QString> pendingKeys = {
                 QStringLiteral("path"),
                 QStringLiteral("error"),
             };
+            if(pendingObj.contains(QStringLiteral("mark")))pendingKeys.append(QStringLiteral("mark"));
             if (!hasOnlyKeys(pendingObj, pendingKeys)) {
                 error = QStringLiteral("Recovery JSON pending entry has unexpected keys.");
                 return false;
@@ -607,6 +612,12 @@ bool recoveryFromJson(const QJsonObject &json, RecoveryState &state, QString &er
                 return false;
             }
             PendingImport pendingImport;
+            const auto markValue=pendingObj.value(QStringLiteral("mark"));
+            if(!markValue.isUndefined()){
+                if(!decodePhotoMark(markValue,pendingImport.mark)){
+                    error=QStringLiteral("Recovery pending mark is invalid.");return false;
+                }
+            }
             pendingImport.path = pathValue.toString();
             pendingImport.error = errorValue.toString();
             pending.append(pendingImport);

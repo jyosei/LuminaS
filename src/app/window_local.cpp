@@ -72,13 +72,25 @@ void Window::syncLocalTool(){
 }
 void Window::bindLocalAsset(const EditResult &result){
     if(current<0||result.path!=photos[current].path)return;
+    localSourceReady=bindPreparedAsset(result);
+}
+bool Window::bindPreparedAsset(const EditResult &result){
+    if(projectLoading||projectApplying||sourceBlocks.contains(result.path)||!known.contains(result.path)||!result.error.isEmpty())return false;
     const auto old=history.snapshot(result.path);LocalEdit::AssetIdentity asset;
     asset.id=old?old->asset.id:QUuid::createUuid().toString(QUuid::WithoutBraces);
     asset.sourcePath=result.path;asset.sourceHash=result.sourceHash;asset.normalizedSize=result.originalSize;
     asset.raw=!result.workFrame.linear.isNull()?result.workFrame.raw:QFileInfo(result.path).suffix().compare("cr3",Qt::CaseInsensitive)==0;
-    asset.sourceFacts=result.workFrame.facts;QString error;
-    localSourceReady=history.bindAsset(result.path,asset,error);
-    if(!localSourceReady)statusBar()->showMessage(error,6000);
+    asset.sourceFacts=result.workFrame.facts;
+    // Per-read timings are diagnostics, not source identity or image edits.
+    // Keep them on SourceFrame; never merge a fresh timing into a saved asset.
+    // Old projects may retain their historic unknown keys unchanged.
+    asset.sourceFacts.remove(QStringLiteral("readStages"));
+    asset.sourceFacts.remove(QStringLiteral("elapsedMs"));
+    QString error;
+    const bool ready=history.bindAsset(result.path,asset,error);
+    if(!ready)statusBar()->showMessage(error,6000);
+    else for(auto &photo:photos)if(photo.path==result.path){photo.sha256=result.sourceHash;break;}
+    return ready;
 }
 void Window::setupLocalEditing(QDockWidget *dock){
     auto *global=dock->widget();global->setParent(nullptr);

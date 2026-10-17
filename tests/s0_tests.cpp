@@ -70,7 +70,7 @@ private slots:
     }
     void switchingSelectionMarksAndSourceSafety() {
         const auto beforeWide = hash(wide), beforePortrait = hash(portrait);
-        Window window; window.show(); window.addFiles({wide,portrait,bad});
+        Window window(nullptr,QStringLiteral("")); window.show(); window.addFiles({wide,portrait,bad});
         window.filmstrip()->item(0)->setSelected(true); window.filmstrip()->item(1)->setSelected(true);
         window.activate(0); window.mark(Pick::Keep);
         QCOMPARE(window.pickAt(0),Pick::Keep); QCOMPARE(window.pickAt(1),Pick::Unmarked);
@@ -109,7 +109,7 @@ private slots:
         if (!qEnvironmentVariableIsEmpty("LUMINA_SCREENSHOT")) { QTest::qWait(100); QVERIFY(window.grab().save(qEnvironmentVariable("LUMINA_SCREENSHOT"))); }
     }
     void closeWhileDecoding() {
-        auto *window = new Window; window->show(); window->addFiles({wide,portrait}); window->activate(1); window->close(); delete window;
+        auto *window = new Window(nullptr,QStringLiteral("")); window->show(); window->addFiles({wide,portrait}); window->activate(1); window->close(); delete window;
         QTest::qWait(100); // Drain queued completions after destruction; no callback into dead UI.
     }
     void realLocalSamples() {
@@ -129,7 +129,7 @@ private slots:
         QCOMPARE(qMax(decoded.image.width(),decoded.image.height()),3840);
         const auto rejected = decodeJpeg(raw);
         QVERIFY(!rejected.error.isEmpty()); QVERIFY(rejected.image.isNull());
-        Window window; window.show(); window.addFiles({jpg,bad});
+        Window window(nullptr,QStringLiteral("")); window.show(); window.addFiles({jpg,bad});
         QSignalSpy spy(&window,&Window::previewChanged);
         QTRY_COMPARE_WITH_TIMEOUT(window.displayedPath(),jpg,10000);
         window.mark(Pick::Keep);

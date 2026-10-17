@@ -6,6 +6,7 @@ namespace LocalEdit {
 constexpr int recoveryFormatVersion=1;
 struct PendingImport {
     QString path,error;
+    PhotoMark mark=PhotoMark::Unmarked;
     bool operator==(const PendingImport &) const = default;
 };
 struct RecoveryState {

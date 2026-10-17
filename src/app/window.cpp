@@ -37,7 +37,7 @@
 #include <QTabWidget>
 #include "render/crop_constraint.h"
 
-Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(parent) {
+Window::Window(QWidget *parent,const QString &libraryDirectory,const QString &projectDirectory) : QMainWindow(parent) {
     editor=new EditLoader(this);
     static std::atomic<quint64> sessions{1};session=sessions.fetch_add(1);
     presetLibrary=libraryDirectory.isNull()?QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)+QStringLiteral("/presets"):libraryDirectory;
@@ -80,7 +80,7 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     auto *retry=new QPushButton(Ui::icon(Ui::Glyph::Reset),QStringLiteral("重新读取"));retry->setObjectName("preview-retry");retry->setAccessibleName(QStringLiteral("重新读取当前照片"));retry->hide();contextLine->addWidget(retry);connect(retry,&QPushButton::clicked,this,[this]{if(current>=0){previewError.clear();findChild<QPushButton *>("preview-retry")->hide();canvas->setMessage(QStringLiteral("正在重新读取照片…"));requestEdit();}});
     auto *viewHint=new QLabel(QStringLiteral("滚轮缩放 · 小手拖动"));viewHint->setObjectName("navigation-hint");viewHint->setProperty("role","muted");contextLine->addWidget(viewHint);layout->addWidget(context);
     canvas=new Canvas;canvas->setObjectName("photo-canvas");canvas->setMinimumSize(280,120);layout->addWidget(canvas,1);
-    details=new QLabel(QStringLiteral("导入照片开始选片 · 参数暂存于本次会话"));details->setWordWrap(true);details->setMinimumHeight(22);details->setProperty("role","muted");layout->addWidget(details);
+    details=new QLabel(QStringLiteral("导入照片开始选片"));details->setWordWrap(true);details->setMinimumHeight(22);details->setProperty("role","muted");layout->addWidget(details);
     auto *filmHeader=new QFrame;filmHeader->setObjectName("filmstrip-header");auto *filmLine=new QHBoxLayout(filmHeader);filmLine->setContentsMargins(0,0,0,0);filmLine->setSpacing(4);
     tool(filmLine,QStringLiteral("上一张"),"photo-previous",Ui::Glyph::Previous,[this]{step(-1);});tool(filmLine,QStringLiteral("下一张"),"photo-next",Ui::Glyph::Next,[this]{step(1);});
     tool(filmLine,QStringLiteral("未标记"),"pick-unmarked",Ui::Glyph::Unmarked,[this]{mark(Pick::Unmarked);});tool(filmLine,QStringLiteral("保留"),"pick-keep",Ui::Glyph::Keep,[this]{mark(Pick::Keep);});tool(filmLine,QStringLiteral("排除 · 不删除文件"),"pick-reject",Ui::Glyph::Reject,[this]{mark(Pick::Reject);});filmLine->addStretch();
@@ -203,7 +203,7 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     auto *constrainCrop=button(QStringLiteral("去除空白边缘"),[this]{constrainCurrentCrop();});constrainCrop->setObjectName("constrain-crop");constrainCrop->setToolTip(QStringLiteral("在校正后的有效源范围内按当前比例收紧裁剪框，保守去除旋转/透视等产生的透明边缘；保持裁框中心与比例，可能比最小所需多裁一点，不会拉伸或填充，可撤销。"));constrainCrop->setAccessibleName(QStringLiteral("去除空白边缘，按当前比例保守收紧裁剪框"));
     auto *resetGeometry=button(QStringLiteral("复位构图"),[this]{auto r=currentRecipe();r.crop={0,0,1,1};r.angle=0;r.perspective={0,0};r.distortion=0;r.chromaticAberration={0,0};r.flipHorizontal=r.flipVertical=false;applyRecipe(r,QStringLiteral("复位构图"));});resetGeometry->setObjectName("reset-geometry");resetGeometry->setToolTip(QStringLiteral("恢复完整画面，清除透视、畸变校正、横向色差、校直和水平/垂直翻转；保留调色。"));
     button(QStringLiteral("重置所有调整"),[this]{applyRecipe({},QStringLiteral("重置"));});
-    auto *hint=new QLabel(QStringLiteral("调整只作用当前照片。标记和参数暂存于本次会话。旋转、透视和光学校正可能露出透明边缘，可用“去除空白边缘”保守收紧裁框。"));hint->setWordWrap(true);form->addRow(hint);
+    auto *hint=new QLabel(QStringLiteral("调整只作用当前照片。可从导入菜单保存项目或恢复会话。旋转、透视和光学校正可能露出透明边缘，可用“去除空白边缘”保守收紧裁框。"));hint->setWordWrap(true);form->addRow(hint);
     for(auto *value:editPanel->findChildren<QDoubleSpinBox *>()){value->setMinimumWidth(76);value->setMaximumWidth(94);}
     new Ui::ParameterWheelGuard(editPanel);
     sections->addStretch();auto *scroll=new QScrollArea;scroll->setObjectName("global-adjustment-scroll");scroll->setWidgetResizable(true);scroll->setWidget(editPanel);dock->setWidget(scroll);Ui::installAdjustmentNavigation(dock,scroll);addDockWidget(Qt::RightDockWidgetArea,dock);resizeDocks({dock},{350},Qt::Horizontal);editPanel->setEnabled(false);
@@ -216,7 +216,9 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     connect(editor,&EditLoader::ready,this,[this](const EditResult &result){presentResult(result);});
     connect(editor,&EditLoader::prefetchProgress,this,[this](int done,int total,int failed){cacheCompleted=done;cacheTotal=total;cacheFailures=failed;refreshLabels();});
     connect(editor,&EditLoader::prefetched,this,[this](const EditResult &result){
+        if(projectLoading||projectApplying||sourceBlocks.contains(result.path))return;
         for(auto &photo:photos)if(photo.path==result.path){photo.cacheState=result.error.isEmpty()?1:2;
+            if(result.error.isEmpty()){importErrors.remove(photo.path);bindPreparedAsset(result);}else importErrors[photo.path]=result.error;
             if(result.error.isEmpty()&&history.value(photo.path)==Recipe{})photo.item->setIcon(QPixmap::fromImage(result.image.scaled(120,85,Qt::KeepAspectRatio,Qt::SmoothTransformation)));
             if(!result.error.isEmpty())photo.item->setToolTip(photo.path+"\n"+result.error);break;}
         // A canonical default cache entry can serve a newly selected default
@@ -229,7 +231,7 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     auto *summary=new QLabel;summary->setObjectName("photo-summary");summary->setProperty("role","muted");summary->setAccessibleName(QStringLiteral("照片数量与选择"));statusBar()->addWidget(summary,1);
     auto *cacheLabel=new QLabel;cacheLabel->setObjectName("preview-cache-progress-label");cacheLabel->setProperty("role","muted");statusBar()->addPermanentWidget(cacheLabel);
     auto *cacheProgress=new QProgressBar;cacheProgress->setObjectName("preview-cache-progress");cacheProgress->setAccessibleName(QStringLiteral("后台预览准备进度"));cacheProgress->setFixedWidth(80);cacheProgress->setFixedHeight(5);cacheProgress->setTextVisible(false);statusBar()->addPermanentWidget(cacheProgress);
-    auto *sessionNote=new QLabel(QStringLiteral("本次会话"));sessionNote->setProperty("role","muted");sessionNote->setToolTip(QStringLiteral("参数和选片标记暂存内存；关闭窗口后不保留。"));statusBar()->addPermanentWidget(sessionNote);
+    projectStatus=new QLabel(QStringLiteral("本次会话"));projectStatus->setObjectName("project-status");projectStatus->setProperty("role","muted");statusBar()->addPermanentWidget(projectStatus);
     connect(strip, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
         if (item) activate(item->data(Qt::UserRole).toInt());
     });
@@ -246,8 +248,10 @@ Window::Window(QWidget *parent,const QString &libraryDirectory) : QMainWindow(pa
     updateResponsiveLayout();
     connect(canvas->presenter(),&DisplayPresenter::displayProfileChanged,this,[this](const QByteArray &icc){Ui::setFilmstripDisplayProfile(strip,icc);});
     Ui::setFilmstripDisplayProfile(strip,canvas->presenter()->monitorIcc());
+    setupProjectPersistence(importMenu,projectDirectory.isNull()?(libraryDirectory.isNull()?QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)+QStringLiteral("/recovery"):QStringLiteral("")):projectDirectory);
 }
 Window::~Window(){
+    projectClosing=true;if(projectPoll)projectPoll->stop();
     finishLocalEdits();
     restoring=true;current=-1;
     if(editor)editor->invalidate();
@@ -272,7 +276,7 @@ void Window::markViewEpochChange(){
 // Single gate for every result that may reach the canvas or lastBase: path, exact RenderView
 // and same-generation identity (interactive feedback may omit draft/job, never identity).
 bool Window::acceptResult(const EditResult &result) const{
-    return current>=0&&result.path==photos[current].path&&acceptsEditTag(result.tag,expected);
+    return !projectLoading&&!projectApplying&&current>=0&&!sourceBlocks.contains(result.path)&&result.path==photos[current].path&&acceptsEditTag(result.tag,expected);
 }
 void Window::presentResult(const EditResult &result,bool immediate){
     const int range=pointRangeActive&&!comparing&&!cropSelecting&&pointColorPanel?pointColorPanel->selectedIndex():-1;
@@ -318,9 +322,11 @@ void Window::presentResult(const EditResult &result,bool immediate){
         if(!immediate&&stillLive)emit previewChanged(result.path,error.isEmpty());
 }
 void Window::addFiles(const QStringList &paths) {
+    if(projectLoading||projectApplying||projectClosing)return;
     const QSignalBlocker block(strip);
     QStringList added;
     for (const auto &path : paths) {
+        if(photos.size()>=LocalEdit::maximumProjectPhotos){statusBar()->showMessage(QStringLiteral("每个项目最多 2000 张照片"),6000);break;}
         QFileInfo info(path);
         const QString absolute = info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath();
         if (known.contains(absolute)) continue;
@@ -434,6 +440,11 @@ void Window::syncControlsFromLive(){
     tintLabel->setToolTip(raw?QStringLiteral("修改RAW绿色白平衡增益；松手从源精算"):QStringLiteral("调整JPEG已渲染RGB的绿色平衡"));restoring=false;
 }
 void Window::requestEdit(){
+    if(projectLoading||projectApplying||projectClosing)return;
+    if(current>=0&&sourceBlocks.contains(photos[current].path)){
+        localSourceReady=false;displayed.clear();editPanel->setEnabled(false);canvas->setMessage(sourceBlocks.value(photos[current].path));
+        if(auto *retry=findChild<QPushButton *>("preview-retry"))retry->hide();return;
+    }
     if(pointPickerActive){pointPickerActive=false;editor->cancelPointColorSample();if(pointColorPanel)pointColorPanel->setPickActive(false);}
     if(presetStrengthActive&&(current<0||photos[current].path!=presetStrengthPath||live!=presetStrengthLast))invalidatePresetStrength();refreshPresetStrengthState();
     if(auto *b=findChild<QPushButton *>("wb-picker"))b->setChecked(false);

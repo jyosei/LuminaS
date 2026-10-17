@@ -9,6 +9,7 @@ namespace LocalEdit {struct LayerChange;}
 #include <QSet>
 #include "edit_loader.h"
 #include "core/commands.h"
+#include "core/recovery_store.h"
 #include "local_brush_transaction.h"
 #include "local_gradient_transaction.h"
 #include <QDoubleSpinBox>
@@ -29,13 +30,17 @@ class QTabWidget;
 class LocalAdjustmentPanel;
 class LocalGradientControls;
 class LocalMaskOptions;
+class ProjectPersistence;
+class QMenu;
+class QCloseEvent;
+struct PersistenceResult;
 
 enum class Pick { Unmarked, Keep, Reject };
 struct Photo { QString path; Pick pick = Pick::Unmarked; QListWidgetItem *item = nullptr; QString sha256; int cacheState=0;};
 class Window : public QMainWindow {
     Q_OBJECT
 public:
-    explicit Window(QWidget *parent = nullptr,const QString &libraryDirectory = QString());
+    explicit Window(QWidget *parent = nullptr,const QString &libraryDirectory = QString(),const QString &projectDirectory=QString());
     ~Window() override;
     void addFiles(const QStringList &paths);
     void activate(int index);
@@ -61,12 +66,32 @@ public:
     void showExportDialog();
     QList<Export::Asset> exportAssets() const;
     LocalEdit::DocumentSnapshot currentPhotoDocument() const;
+    bool saveProjectFile(const QString &path,QString &error);
+    bool openProjectFile(const QString &path,bool recovery,QString &error);
+    QString projectRecoveryPath() const;
 signals:
     void previewChanged(const QString &path, bool success);
 protected:
     void changeEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 private:
+    void setupProjectPersistence(QMenu *menu,const QString &root);
+    void syncProjectSnapshot();
+    void applyProjectLoad(const PersistenceResult &result);
+    void refreshProjectStatus();
+    void chooseProjectSave(bool saveAs=false);
+    void chooseProjectOpen(bool recovery=false);
+    bool confirmProjectReplacement();
+    bool bindPreparedAsset(const EditResult &result);
+    ProjectPersistence *projectPersistence=nullptr;
+    QTimer *projectPoll=nullptr;
+    QString projectRoot,projectId,projectName;
+    quint64 projectRevision=1;
+    LocalEdit::RecoverySnapshot projectObserved;
+    QLabel *projectStatus=nullptr;
+    QHash<QString,QString> sourceBlocks,importErrors;
+    bool projectLoading=false,projectApplying=false,projectClosing=false,closeAfterSave=false;
     void setupLocalEditing(QDockWidget *dock);
     void refreshLocalPanel();
     void syncLocalTool();

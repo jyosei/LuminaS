@@ -1,5 +1,6 @@
 #pragma once
 #include "core/recovery_store.h"
+#include "core/commands.h"
 #include <QObject>
 #include <QFutureWatcher>
 #include <QTimer>
@@ -19,6 +20,7 @@ struct PersistenceResult {
     QString path,hash,error;
     LocalEdit::RecoverySnapshot state;
     QVector<LocalEdit::SourceStatus> sources;
+    std::shared_ptr<const EditHistory> loadedHistory;
     quint64 revision=0;
     bool discarded=false;
 };

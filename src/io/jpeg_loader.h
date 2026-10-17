@@ -23,6 +23,7 @@ public:
     ~JpegLoader() override;
     void preview(const QString &path, quint64 token);
     void thumbnail(const QString &path);
+    void invalidate();
 signals:
     void ready(const JpegResult &result, quint64 token, bool preview);
 private:
@@ -33,6 +34,6 @@ private:
     std::optional<Request> pending;
     QQueue<Request> thumbnails;
     Request active;
-    bool busy = false, closing = false;
+    bool busy = false, closing = false, activeInvalid=false;
 };
 Q_DECLARE_METATYPE(JpegResult)

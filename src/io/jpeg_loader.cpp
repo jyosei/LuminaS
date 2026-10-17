@@ -54,10 +54,11 @@ JpegLoader::JpegLoader(QObject *parent) : QObject(parent) {
     connect(&watcher, &QFutureWatcher<JpegResult>::finished, this, [this] {
         auto result = watcher.result();
         busy = false;
-        if (!closing) emit ready(result, active.token, active.preview);
+        if (!closing&&!activeInvalid) emit ready(result, active.token, active.preview);
         dispatch();
     });
 }
+void JpegLoader::invalidate(){pending.reset();thumbnails.clear();activeInvalid=true;}
 JpegLoader::~JpegLoader() {
     closing = true;
     disconnect(&watcher, nullptr, this, nullptr);
@@ -75,7 +76,7 @@ void JpegLoader::dispatch() {
     if (pending) { active = *pending; pending.reset(); }
     else if (!thumbnails.isEmpty()) active = thumbnails.dequeue();
     else return;
-    busy = true;
+    busy = true;activeInvalid=false;
     const auto request = active;
     watcher.setFuture(QtConcurrent::run(&pool, [request] {
         if (QFileInfo(request.path).suffix().compare("cr3",Qt::CaseInsensitive)==0) {

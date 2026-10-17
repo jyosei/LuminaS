@@ -3,7 +3,7 @@
 PersistenceResult ProjectPersistence::perform(const PersistenceJob &job){
     PersistenceResult result;result.operation=job.operation;result.path=job.path;
     const auto fail=[&](QString error){
-        result.state.reset();result.sources.clear();result.hash.clear();
+        result.state.reset();result.sources.clear();result.hash.clear();result.loadedHistory.reset();
         result.error=error.isEmpty()?QStringLiteral("项目存储操作失败"):std::move(error);return result;
     };
     if(isCanceled(job.cancel))return fail(QStringLiteral("操作已取消"));
@@ -38,6 +38,8 @@ PersistenceResult ProjectPersistence::perform(const PersistenceJob &job){
     const auto frozen=LocalEdit::freezeRecovery(state,error);if(!frozen)return fail(error);
     QVector<LocalEdit::SourceStatus> sources;
     if(!LocalEdit::inspectProjectSources(frozen->project,sources,error,job.cancel))return fail(error);
+    QList<LocalEdit::DocumentSnapshot> documents;for(const auto &photo:frozen->project->photos)documents<<photo.document;
+    auto history=std::make_shared<EditHistory>();if(!history->resetDocuments(documents,error))return fail(error);
     if(isCanceled(job.cancel))return fail(QStringLiteral("操作已取消"));
-    result.state=frozen;result.hash=hash;result.sources=std::move(sources);result.revision=frozen->project->revision;return result;
+    result.loadedHistory=std::move(history);result.state=frozen;result.hash=hash;result.sources=std::move(sources);result.revision=frozen->project->revision;return result;
 }

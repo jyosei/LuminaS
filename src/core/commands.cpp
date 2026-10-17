@@ -192,6 +192,7 @@ bool EditHistory::bindAsset(const QString &path,const LocalEdit::AssetIdentity &
     if(!asset.normalizedSize.isEmpty())refined.normalizedSize=asset.normalizedSize;
     refined.raw=asset.raw;
     refined.sourceFacts=mergeFacts(current->asset.sourceFacts,asset.sourceFacts);
+    if(refined==current->asset)return true; // Stable pointer for unchanged committed state.
     if(!validFacts(refined.sourceFacts)){error=QStringLiteral("merged sourceFacts exceed the 256KiB limit");return false;}
     auto refinedCopy=std::make_shared<LocalEdit::PhotoDocument>(*current);
     refinedCopy->asset=refined;

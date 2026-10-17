@@ -87,6 +87,11 @@ void EditLoader::invalidate(){
     localPreviewCache->clear();
     lastBase={};lastFullGeometry.reset();
 }
+void EditLoader::resetImports(){
+    invalidate();prefetchCancel.cancel();prefetchQueue.clear();imported.clear();
+    displayCache.clear();displayOrder.clear();displayBytes=0;completed=failures=0;
+    emit prefetchProgress(0,0,0);
+}
 EditLoader::~EditLoader(){
     closing=true;invalidate();prefetchQueue.clear();prefetchCancel.cancel();
     disconnect(&pointSampleWatcher,nullptr,this,nullptr);disconnect(&watcher,nullptr,this,nullptr);
